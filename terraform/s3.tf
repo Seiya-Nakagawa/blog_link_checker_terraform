@@ -9,7 +9,7 @@ resource "aws_s3_bucket" "s3_link_checker_results" {
 }
 
 resource "aws_s3_bucket_versioning" "versioning_link_checker_results" {
-  bucket = aws_s3_bucket.link_checker_results.id
+  bucket = aws_s3_bucket.s3_link_checker_results.id
   versioning_configuration {
     status = "Enabled"
   }
