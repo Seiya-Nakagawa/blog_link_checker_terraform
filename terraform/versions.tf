@@ -25,6 +25,10 @@ terraform {
 # プライマリリージョン (東京)
 provider "aws" {
   region = "ap-northeast-1"
+
+  assume_role {
+    role_arn = "arn:aws:iam::${var.aws_account_id}:role/member-${var.env}-iamrole-terraform"
+  }
 }
 
 # グローバルサービス用プロバイダ (バージニア北部)
