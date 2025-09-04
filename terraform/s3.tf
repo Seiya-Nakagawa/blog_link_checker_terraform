@@ -14,4 +14,3 @@ resource "aws_s3_bucket_versioning" "versioning_link_checker_results" {
     status = "Enabled"
   }
 }
-
