@@ -19,7 +19,7 @@ resource "aws_s3_bucket_versioning" "versioning_link_checker_results" {
 resource "aws_s3_bucket_notification" "s3_lambda_trigger" {
   bucket = aws_s3_bucket.s3_link_checker_results.id
 
-  lambda_queue {
+  lambda_function {
     lambda_function_arn = aws_lambda_function.link_checker_lambda.arn
     events              = ["s3:ObjectCreated:Put"]
     filter_prefix       = "link-check-data/"
