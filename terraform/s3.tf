@@ -1,8 +1,8 @@
 resource "aws_s3_bucket" "s3_link_checker_results" {
-  bucket = "${var.system_name}-${var.env}-s3-link-checker-results"
+  bucket = "${var.system_name}-${var.env}-s3-linkchecker-results"
 
   tags = {
-    Name        = "${var.system_name}-${var.env}-s3-link-checker-results",
+    Name        = "${var.system_name}-${var.env}-s3-linkchecker-results",
     SystemName  = var.system_name,
     Env         = var.env,
   }
