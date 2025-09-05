@@ -14,3 +14,19 @@ resource "aws_s3_bucket_versioning" "versioning_link_checker_results" {
     status = "Enabled"
   }
 }
+
+# S3 Bucket Notification to trigger Lambda
+resource "aws_s3_bucket_notification" "s3_lambda_trigger" {
+  bucket = aws_s3_bucket.s3_link_checker_results.id
+
+  lambda_queue {
+    lambda_function_arn = aws_lambda_function.link_checker_lambda.arn
+    events              = ["s3:ObjectCreated:Put"]
+    filter_prefix       = "link-check-data/"
+    filter_suffix       = ".json"
+  }
+
+  depends_on = [
+    aws_lambda_permission.allow_s3_to_call_lambda
+  ]
+}
