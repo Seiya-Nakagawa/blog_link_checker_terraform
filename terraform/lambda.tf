@@ -59,8 +59,8 @@ resource "aws_lambda_function" "link_checker_lambda" {
   memory_size   = 128
 
   # S3経由ではなく、生成したZIPファイルを直接指定
-  filename         = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  filename         = resource.archive_file.lambda_zip.output_path
+  source_code_hash = resource.archive_file.lambda_zip.output_base64sha256
 
   # 【削除】レイヤーは不要なのでlayers属性を削除します
 
