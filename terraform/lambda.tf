@@ -52,7 +52,7 @@ resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
 # ----------------------------------------------------
 # S3上のライブラリ用ZIPの情報を取得
 # ----------------------------------------------------
-data "aws_s3_object" "dependencies_zip" {
-  bucket = aws_s3_bucket.s3_link_checker.id
-  key    = "lambda-layers/dependencies.zip"
-}
+# data "aws_s3_object" "dependencies_zip" {
+#   bucket = aws_s3_bucket.s3_link_checker.id
+#   key    = "lambda-layers/dependencies.zip"
+# }
