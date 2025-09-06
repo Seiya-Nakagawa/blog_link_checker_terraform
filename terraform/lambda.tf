@@ -10,7 +10,7 @@ resource "aws_sns_topic" "link_checker_sns_topic" {
 # ----------------------------------------------------
 resource "null_resource" "prepare_lambda_package" {
   triggers = {
-    # Pythonコードかライブラリリストが変更されたら再実行
+    # Pythonコードかライブラリリストが変更されたら、このリソースを再作成(再実行)する
     lambda_py_hash  = filebase64sha256("${path.cwd}/lambda/link_checker_lambda.py")
     requirements_hash = filebase64sha256("${path.cwd}/lambda/requirements.txt")
   }
@@ -18,16 +18,9 @@ resource "null_resource" "prepare_lambda_package" {
   provisioner "local-exec" {
     # 複数のコマンドを順に実行
     command = <<-EOT
-      # 既存のビルドディレクトリをクリーンアップ
       rm -rf ${path.cwd}/build/lambda_package
-      
-      # ビルド用ディレクトリを作成
       mkdir -p ${path.cwd}/build/lambda_package
-      
-      # ライブラリをビルド用ディレクトリにインストール
       pip install -r ${path.cwd}/lambda/requirements.txt -t ${path.cwd}/build/lambda_package
-      
-      # あなたのLambdaコードをビルド用ディレクトリにコピー
       cp ${path.cwd}/lambda/link_checker_lambda.py ${path.cwd}/build/lambda_package/
     EOT
   }
@@ -35,15 +28,15 @@ resource "null_resource" "prepare_lambda_package" {
 
 # ----------------------------------------------------
 # ステップ2: ビルド用ディレクトリを丸ごとZIP化する
+# 【重要】"data"ではなく"resource"を使用します
 # ----------------------------------------------------
-data "archive_file" "lambda_zip" {
+resource "archive_file" "lambda_zip" {
   type        = "zip"
   output_path = "${path.cwd}/build/lambda_package.zip"
-
-  # 【修正】source_dirで、すべてのファイルが集約されたディレクトリを指定
   source_dir  = "${path.cwd}/build/lambda_package"
 
   # null_resourceによるファイル準備が終わってからZIP化を実行するように依存関係を設定
+  # resource同士の依存関係なので、これは正しく機能します
   depends_on = [null_resource.prepare_lambda_package]
 }
 
@@ -58,8 +51,9 @@ resource "aws_lambda_function" "link_checker_lambda" {
   timeout       = 300
   memory_size   = 128
 
-  filename         = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  # 【重要】"resource.archive_file"を参照します
+  filename         = resource.archive_file.lambda_zip.output_path
+  source_code_hash = resource.archive_file.lambda_zip.output_base64sha256
 
   environment {
     variables = {
