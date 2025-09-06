@@ -7,39 +7,56 @@ resource "aws_sns_topic" "link_checker_sns_topic" {
 
 # ----------------------------------------------------
 # Lambdaレイヤーを定義
-# ライブラリ(dependencies.zip)は、手動でS3にアップロードされていることを前提とします。
 # ----------------------------------------------------
 resource "aws_lambda_layer_version" "dependencies_layer" {
   layer_name = "${var.system_name}-${var.env}-dependencies"
   description = "Shared libraries for link checker"
-
-  # 手動でS3にアップロードしたライブラリ用ZIPファイルを参照します
-  s3_bucket = aws_s3_bucket.s3_link_checker.id # s3.tfで定義されているバケット名を指定
+  s3_bucket = aws_s3_bucket.s3_link_checker.id
   s3_key    = "lambda-layers/dependencies.zip"
-
-  # S3上のZIPが更新されたことを検知するために、そのファイルのETag(ハッシュ値)を監視します
   source_code_hash = data.aws_s3_object.dependencies_zip.etag
-
   compatible_runtimes = ["python3.13"]
 }
 
 # ----------------------------------------------------
+# 【追加】ZIPファイルの出力先ディレクトリを作成するためのリソース
+# ----------------------------------------------------
+resource "null_resource" "make_build_dir" {
+  # このリソースは、コードが変更された場合にのみ再実行されるようにトリガーを設定
+  triggers = {
+    lambda_py_hash = filebase64sha256("${path.cwd}/lambda/link_checker_lambda.py")
+  }
+
+  provisioner "local-exec" {
+    # buildディレクトリが存在しない場合にのみ作成する
+    command = "mkdir -p ${path.cwd}/build"
+  }
+}
+
+# ----------------------------------------------------
+# 関数コード用のZIPファイルを自動で作成する
+# ----------------------------------------------------
+data "archive_file" "lambda_function_zip" {
+  type        = "zip"
+  source_file = "${path.cwd}/lambda/link_checker_lambda.py"
+  output_path = "${path.cwd}/build/lambda_function.zip"
+
+  # 【重要】ディレクトリ作成が終わってからZIP化を実行するように依存関係を設定
+  depends_on = [null_resource.make_build_dir]
+}
+
+# ----------------------------------------------------
 # Lambda関数を定義
-# Pythonコードは、Terraformが自動でZIP化してデプロイします。
 # ----------------------------------------------------
 resource "aws_lambda_function" "link_checker_lambda" {
   function_name = "${var.system_name}-${var.env}-link-checker-lambda"
   handler       = "link_checker_lambda.lambda_handler"
   runtime       = "python3.13"
-  role          = aws_iam_role.lambda_exec_role.arn # iam.tfで定義されているロール名を指定
+  role          = aws_iam_role.lambda_exec_role.arn
   timeout       = 300
   memory_size   = 128
 
-  # archive_fileで動的にZIP化したファイルを、デプロイパッケージとして直接指定します
   filename         = data.archive_file.lambda_function_zip.output_path
   source_code_hash = data.archive_file.lambda_function_zip.output_base64sha256
-
-  # 作成したLambdaレイヤーをこの関数に関連付けます
   layers = [aws_lambda_layer_version.dependencies_layer.arn]
 
   environment {
@@ -50,23 +67,10 @@ resource "aws_lambda_function" "link_checker_lambda" {
 }
 
 # ----------------------------------------------------
-# 関数コード用のZIPファイルを自動で作成するためのデータソース
-# ----------------------------------------------------
-data "archive_file" "lambda_function_zip" {
-  type        = "zip"
-  
-  # ZIPに含めるソースファイルを指定します (ワーキングディレクトリからの相対パス)
-  source_file = "${path.cwd}/lambda/link_checker_lambda.py"
-  
-  # Terraformが実行される一時ディレクトリにZIPファイルが作成されます
-  output_path = "${path.cwd}/build/lambda_function.zip"
-}
-
-# ----------------------------------------------------
-# S3上のライブラリ用ZIPの情報を取得するためのデータソース
+# S3上のライブラリ用ZIPの情報を取得
 # ----------------------------------------------------
 data "aws_s3_object" "dependencies_zip" {
-  bucket = aws_s3_bucket.s3_link_checker.id # s3.tfで定義されているバケット名を指定
+  bucket = aws_s3_bucket.s3_link_checker.id
   key    = "lambda-layers/dependencies.zip"
 }
 
@@ -78,5 +82,5 @@ resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.link_checker_lambda.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.s3_link_checker.arn # s3.tfで定義されているトリガー用バケット名を指定
+  source_arn    = aws_s3_bucket.s3_link_checker.arn
 }
