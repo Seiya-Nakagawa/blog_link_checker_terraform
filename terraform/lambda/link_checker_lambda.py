@@ -3,6 +3,7 @@ import os
 import json
 import urllib.parse
 import logging
+import time  # サーバー負荷軽減のためのtimeモジュールをインポート
 import boto3
 import requests
 from bs4 import BeautifulSoup
@@ -29,12 +30,14 @@ try:
     MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 3))
     BACKOFF_FACTOR = float(os.environ.get('BACKOFF_FACTOR', 0.5))
     MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 10))
+    CRAWL_WAIT_SECONDS = int(os.environ.get('CRAWL_WAIT_SECONDS', 2)) # クロール待機時間も環境変数から取得可能に
 except (ValueError, TypeError) as e:
     logger.warning(f"環境変数の値が無効です。デフォルト値を使用します。エラー: {e}")
     REQUEST_TIMEOUT = 10
     MAX_RETRIES = 3
     BACKOFF_FACTOR = 0.5
     MAX_WORKERS = 10
+    CRAWL_WAIT_SECONDS = 2
 
 def requests_retry_session(retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, status_forcelist=(500, 502, 503, 504), session=None):
     """リトライ機能付きのrequestsセッションをセットアップする"""
@@ -55,48 +58,34 @@ def get_html_content(url):
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = session.get(url, timeout=REQUEST_TIMEOUT, headers=headers)
         response.raise_for_status()
-        # はてなブログはUTF-8なのでエンコーディングを明示的に指定
         response.encoding = response.apparent_encoding
         return response.text
     except requests.exceptions.RequestException as e:
         logger.error(f"URL取得エラー {url}: {e}")
         return None
 
-# ===== ここから新規追加・修正箇所 =====
-
 def extract_hatena_ad_links(html_content, base_url):
-    """
-    はてなブログのHTMLから、指定された条件の広告リンクのみを抽出する関数。
-    「(※一部、広告・宣伝が含まれます。)」というpタグの次にあるpタグ内のaタグを対象とする。
-    """
+    """はてなブログのHTMLから、指定された条件の広告リンクのみを抽出する"""
     links = set()
     if not html_content:
         return list(links)
     
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # 全てのpタグを検索
     for p_tag in soup.find_all('p'):
-        # テキスト内容を判定
         if p_tag.get_text(strip=True) == "(※一部、広告・宣伝が含まれます。)":
-            # 条件に一致するpタグの、すぐ隣のpタグ（弟要素）を探す
             next_p = p_tag.find_next_sibling('p')
             if next_p:
-                # 隣のpタグ内にaタグがあるか探す
                 a_tag = next_p.find('a', href=True)
                 if a_tag:
                     href = a_tag['href']
-                    # 相対URLを絶対URLに変換してセットに追加
                     full_url = urllib.parse.urljoin(base_url, href)
                     links.add(full_url)
     
     return list(links)
 
 def find_next_page_link(html_content, base_url):
-    """
-    はてなブログのHTMLから「次のページ」のリンクURLを取得する関数。
-    rel="next" 属性を持つaタグを探す。
-    """
+    """はてなブログのHTMLから「次のページ」のリンクURLを取得する"""
     if not html_content:
         return None
         
@@ -111,9 +100,6 @@ def find_next_page_link(html_content, base_url):
         logger.info("次のページのリンクは見つかりませんでした。クロールを終了します。")
         return None
 
-# ===== ここまで新規追加・修正箇所 =====
-
-# (元の extract_links, extract_article_links_for_livedoor は変更なしで残す)
 def extract_links(html_content, base_url):
     """HTMLコンテンツから全てのhrefリンクを抽出する"""
     links = set()
@@ -140,13 +126,11 @@ def extract_article_links_for_livedoor(html_content, base_url):
         article_links.add(full_url)
     return list(article_links)
 
-
 def check_link_status(url):
     """単一のリンクのステータスを確認する"""
     try:
         session = requests_retry_session()
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        # HEADリクエストでリダイレクトを許可して最終的なURLとステータスを取得
         response = session.head(url, timeout=REQUEST_TIMEOUT, headers=headers, allow_redirects=True)
         response.raise_for_status()
         return {"status_code": response.status_code, "final_url": response.url, "error_message": None}
@@ -166,7 +150,6 @@ def publish_sns_notification(subject, message):
     except Exception as e:
         logger.error(f"SNS通知の公開エラー: {e}")
 
-# (元の process_page_links は変更なしで残し、はてなブログ以外のケースで使用)
 def process_page_links(page_url, blog_url, all_detailed_results, current_errors):
     """指定された1ページの汎用的なリンクチェック処理を行う"""
     logger.info(f"記事ページをチェック中: {page_url}")
@@ -195,7 +178,6 @@ def process_page_links(page_url, blog_url, all_detailed_results, current_errors)
                 logger.error(f"リンクチェック中に例外が発生しました {link}: {exc}")
                 all_detailed_results.append({"blog_url": blog_url, "page_url": page_url, "checked_link": link, "status": "ERROR", "status_code": None, "error_message": str(exc), "timestamp": datetime.now().isoformat()})
                 current_errors.append({"blog_url": blog_url, "page_url": page_url, "checked_link": link, "error_reason": str(exc)})
-
 
 def lambda_handler(event, context):
     """Lambda関数のメインハンドラ"""
@@ -228,10 +210,7 @@ def lambda_handler(event, context):
             if not blog_url:
                 logger.warning(f"URLがないためターゲット項目をスキップします: {target_item}")
                 continue
-
-            # ===== ここから処理分岐を修正 =====
             
-            # ブログの種類を判定
             is_livedoor = "livedoor.blog" in blog_url or "blog.jp" in blog_url
             is_hatena = "hatenablog.com" in blog_url or "hatenablog.jp" in blog_url
 
@@ -239,21 +218,18 @@ def lambda_handler(event, context):
                 logger.info(f"はてなブログを処理中: {blog_url}")
                 current_page_url = blog_url
                 
-                # 「次のページ」がなくなるまでループでクロール
                 while current_page_url:
                     logger.info(f"ページをクロール中: {current_page_url}")
                     html_content = get_html_content(current_page_url)
-                    if not html_content:
-                        error_reason = "ページのコンテンツ取得に失敗しました"
-                        all_detailed_results.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": None, "status": "ERROR", "status_code": None, "error_message": error_reason, "timestamp": datetime.now().isoformat()})
-                        current_errors.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": None, "error_reason": error_reason})
-                        break # このページの処理を中断してループを抜ける
                     
-                    # はてなブログ用の広告リンク抽出関数を呼び出す
+                    # === ページ取得失敗時の処理を改善 ===
+                    if not html_content:
+                        logger.warning(f"ページのコンテンツ取得に失敗したため、このURLでのクロールを終了します: {current_page_url}")
+                        break # エラーとして記録せず、ループを正常に抜ける
+                    
                     extracted_links = extract_hatena_ad_links(html_content, current_page_url)
                     logger.info(f"{current_page_url} から {len(extracted_links)} 個の対象広告リンクを抽出しました")
 
-                    # 抽出したリンクを並列でチェック
                     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                         future_to_link = {executor.submit(check_link_status, link): link for link in extracted_links}
                         for future in as_completed(future_to_link):
@@ -261,16 +237,13 @@ def lambda_handler(event, context):
                             try:
                                 check_result = future.result()
                                 
-                                # --- ここからエラー判定ロジック ---
                                 status = "OK"
                                 error_reason = None
                                 
-                                # 1. HTTPステータスコードでの判定
                                 if not (check_result["status_code"] and 200 <= check_result["status_code"] < 400):
                                     status = "ERROR"
                                     error_reason = check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"
                                 
-                                # 2. カスタムエラー条件での判定 (ステータスがOKの場合のみ)
                                 if status == "OK":
                                     final_url = check_result["final_url"]
                                     parsed_url = urllib.parse.urlparse(final_url)
@@ -281,38 +254,26 @@ def lambda_handler(event, context):
                                     elif "hatena" in final_url:
                                         status = "ERROR"
                                         error_reason = "リンク先のURLに 'hatena' が含まれています"
-                                # --- エラー判定ロジックここまで ---
 
-                                detailed_result = {
-                                    "blog_url": blog_url, 
-                                    "page_url": current_page_url,
-                                    "checked_link": link, 
-                                    "status": status, 
-                                    "status_code": check_result["status_code"], 
-                                    "final_url": check_result["final_url"], 
-                                    "error_message": error_reason, 
-                                    "timestamp": datetime.now().isoformat()
-                                }
+                                detailed_result = {"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "status": status, "status_code": check_result["status_code"], "final_url": check_result["final_url"], "error_message": error_reason, "timestamp": datetime.now().isoformat()}
                                 all_detailed_results.append(detailed_result)
                                 
                                 if status == "ERROR":
-                                    current_errors.append({
-                                        "blog_url": blog_url, 
-                                        "page_url": current_page_url,
-                                        "checked_link": link, 
-                                        "error_reason": error_reason
-                                    })
+                                    current_errors.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "error_reason": error_reason})
                             except Exception as exc:
                                 logger.error(f"リンクチェック中に例外が発生しました {link}: {exc}")
                                 all_detailed_results.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "status": "ERROR", "status_code": None, "error_message": str(exc), "timestamp": datetime.now().isoformat()})
                                 current_errors.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "error_reason": str(exc)})
                     
-                    # 次のページのURLを取得してループを継続
                     current_page_url = find_next_page_link(html_content, current_page_url)
+
+                    # === 「429 Too Many Requests」エラー対策 ===
+                    if current_page_url:
+                        logger.info(f"次のページへアクセスする前に{CRAWL_WAIT_SECONDS}秒待機します...")
+                        time.sleep(CRAWL_WAIT_SECONDS)
 
             elif is_livedoor:
                 logger.info(f"ライブドアブログを処理中: {blog_url}")
-                # (ライブドアブログの処理は変更なし)
                 top_page_content = get_html_content(blog_url)
                 if top_page_content:
                     article_urls = extract_article_links_for_livedoor(top_page_content, blog_url)
@@ -328,16 +289,13 @@ def lambda_handler(event, context):
                     all_detailed_results.append({"blog_url": blog_url, "checked_link": blog_url, "status": "ERROR", "status_code": None, "error_message": error_reason, "timestamp": datetime.now().isoformat()})
                     current_errors.append({"blog_url": blog_url, "checked_link": blog_url, "error_reason": error_reason})
             
-            else: # その他のブログの場合（既存の汎用的な処理）
+            else:
                 logger.info(f"汎用ページとして処理中: {blog_url}")
                 process_page_links(blog_url, blog_url, all_detailed_results, current_errors)
-
-            # ===== 処理分岐の修正ここまで =====
 
         logger.info(f"詳細結果の合計: {len(all_detailed_results)}")
         logger.info(f"現在のエラー合計: {len(current_errors)}")
 
-        # (以降の結果集計、S3への保存、SNS通知部分は変更なし)
         previous_error_set = {(e.get('page_url', e['blog_url']), e['checked_link']) for e in previous_error_details}
         current_error_set = {(e.get('page_url', e['blog_url']), e['checked_link']) for e in current_errors}
         new_errors = [e for e in current_errors if (e.get('page_url', e['blog_url']), e['checked_link']) not in previous_error_set]
