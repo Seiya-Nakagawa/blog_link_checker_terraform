@@ -32,7 +32,8 @@ resource "aws_iam_role_policy" "lambda_s3_access_policy" {
       {
         Action = [
           "s3:GetObject",
-          "s3:GetObjectVersion"
+          "s3:GetObjectVersion",
+          "s3:PutObject"
         ],
         Effect = "Allow",
         Resource = [
