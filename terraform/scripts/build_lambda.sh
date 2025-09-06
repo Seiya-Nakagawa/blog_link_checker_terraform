@@ -2,12 +2,13 @@
 set -e
 
 # -------------------------------------------------------------------
-# 【重要】Terraform Cloud環境に必要なツールをインストールする
+# 【重要】Terraform Cloud環境に必要なツールを管理者権限でインストールする
 # -------------------------------------------------------------------
-# 実行環境にzipコマンドがない場合があるため、apt-getを使ってインストールします。
-# "-y"オプションは、すべての確認プロンプトに自動で"yes"と答えるために必要です。
-apt-get update > /dev/null
-apt-get install -y zip > /dev/null
+# apt-getコマンドには管理者権限が必要なため、先頭に"sudo"を追加します。
+echo "Updating package lists and installing zip..."
+sudo apt-get update > /dev/null
+sudo apt-get install -y zip > /dev/null
+echo "Installation complete."
 # -------------------------------------------------------------------
 
 # スクリプトが置かれているディレクトリ('scripts')を基準にする
