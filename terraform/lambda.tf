@@ -37,7 +37,7 @@ resource "null_resource" "build_lambda_package" {
 # ----------------------------------------------------
 # 【変更】ビルドされたパッケージ全体をZIP化する
 # ----------------------------------------------------
-data "archive_file" "lambda_zip" {
+resource "archive_file" "lambda_zip" {
   type        = "zip"
   # ビルドされたコードとライブラリが含まれるディレクトリを指定
   source_dir  = "${path.module}/build/lambda_package"
