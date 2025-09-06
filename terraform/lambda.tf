@@ -1,12 +1,4 @@
 # ----------------------------------------------------
-# SNSトピック
-# Lambda関数が通知を送信するために使用します。
-# ----------------------------------------------------
-resource "aws_sns_topic" "link_checker_sns_topic" {
-  name = "${var.system_name}-${var.env}-link-checker-notifications"
-}
-
-# ----------------------------------------------------
 # S3上のライブラリ用ZIPの情報を取得するためのデータソース
 # ----------------------------------------------------
 data "aws_s3_object" "dependencies_zip" {
@@ -67,7 +59,6 @@ resource "aws_lambda_function" "link_checker_lambda" {
   # Lambda関数内で使用する環境変数を定義します
   environment {
     variables = {
-      SNS_TOPIC_ARN    = aws_sns_topic.link_checker_sns_topic.arn
       S3_OUTPUT_BUCKET = aws_s3_bucket.s3_link_checker.id # 結果を出力するバケット
       LOG_LEVEL        = "INFO"
     }
