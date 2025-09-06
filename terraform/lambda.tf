@@ -5,7 +5,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
   function_name = "${var.system_name}-${var.env}-link-checker-lambda"
   handler       = "link_checker_lambda.lambda_handler"
   runtime       = "python3.13"
-  role          = aws_iam_role.lambda_exec_role.arn # iam.tfで定義されているロール名を指定
+  # role          = aws_iam_role.lambda_exec_role.arn
 
   # archive_fileで動的にZIP化したファイルを、デプロイパッケージとして直接指定します
   # filename         = data.archive_file.lambda_function_zip.output_path
