@@ -36,3 +36,23 @@ resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
   principal     = "s3.amazonaws.com"
   source_arn    = aws_s3_bucket.s3_link_checker.arn
 }
+
+# ----------------------------------------------------
+# Lambdaレイヤーを定義
+# ----------------------------------------------------
+resource "aws_lambda_layer_version" "dependencies_layer" {
+  layer_name = "${var.system_name}-${var.env}-dependencies"
+  description = "Shared libraries for link checker"
+  s3_bucket = aws_s3_bucket.s3_link_checker.id
+  s3_key    = "lambda-layers/dependencies.zip"
+  source_code_hash = data.aws_s3_object.dependencies_zip.etag
+  compatible_runtimes = ["python3.13"]
+}
+
+# ----------------------------------------------------
+# S3上のライブラリ用ZIPの情報を取得
+# ----------------------------------------------------
+data "aws_s3_object" "dependencies_zip" {
+  bucket = aws_s3_bucket.s3_link_checker.id
+  key    = "lambda-layers/dependencies.zip"
+}
