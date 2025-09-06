@@ -25,3 +25,14 @@ data "archive_file" "lambda_function_zip" {
   # 出力先のディレクトリは指定せず、Terraformに任せます
   output_path = "${path.cwd}/lambda_function.zip"
 }
+
+# ----------------------------------------------------
+# S3からの実行権限
+# ----------------------------------------------------
+resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
+  statement_id  = "AllowExecutionFromS3Bucket"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.link_checker_lambda.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.s3_link_checker.arn
+}
