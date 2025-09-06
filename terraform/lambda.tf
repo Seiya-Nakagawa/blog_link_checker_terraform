@@ -6,39 +6,45 @@ resource "aws_sns_topic" "link_checker_sns_topic" {
 }
 
 # ----------------------------------------------------
-# ステップ1: `pip install`を実行してライブラリを一時ディレクトリに配置する
+# ステップ1: ビルド用ディレクトリに必要なファイルをすべて集める
 # ----------------------------------------------------
-resource "null_resource" "install_lambda_dependencies" {
+resource "null_resource" "prepare_lambda_package" {
   triggers = {
-    # requirements.txtが変更されたら再実行
-    requirements_hash = file("${path.cwd}/lambda/requirements.txt")
+    # Pythonコードかライブラリリストが変更されたら再実行
+    lambda_py_hash  = filebase64sha256("${path.cwd}/lambda/link_checker_lambda.py")
+    requirements_hash = filebase64sha256("${path.cwd}/lambda/requirements.txt")
   }
 
   provisioner "local-exec" {
-    # ライブラリをプロジェクトルートのbuild/dependenciesディレクトリにインストールする
-    command = "pip install -r ${path.cwd}/lambda/requirements.txt -t ${path.cwd}/build/dependencies"
+    # 複数のコマンドを順に実行
+    command = <<-EOT
+      # 既存のビルドディレクトリをクリーンアップ
+      rm -rf ${path.cwd}/build/lambda_package
+      
+      # ビルド用ディレクトリを作成
+      mkdir -p ${path.cwd}/build/lambda_package
+      
+      # ライブラリをビルド用ディレクトリにインストール
+      pip install -r ${path.cwd}/lambda/requirements.txt -t ${path.cwd}/build/lambda_package
+      
+      # あなたのLambdaコードをビルド用ディレクトリにコピー
+      cp ${path.cwd}/lambda/link_checker_lambda.py ${path.cwd}/build/lambda_package/
+    EOT
   }
 }
 
 # ----------------------------------------------------
-# ステップ2: インストールされたライブラリのファイル一覧を取得する
+# ステップ2: ビルド用ディレクトリを丸ごとZIP化する
 # ----------------------------------------------------
 data "archive_file" "lambda_zip" {
   type        = "zip"
   output_path = "${path.cwd}/build/lambda_package.zip"
 
-  # あなたのLambdaコードをZIPに含める
-  source {
-    content  = file("${path.cwd}/lambda/link_checker_lambda.py")
-    filename = "link_checker_lambda.py"
-  }
+  # 【修正】source_dirで、すべてのファイルが集約されたディレクトリを指定
+  source_dir  = "${path.cwd}/build/lambda_package"
 
-  # ライブラリがインストールされたディレクトリをZIPに含める
-  # このsource_dirは、null_resourceの実行後に存在する必要がある
-  source_dir = "${path.cwd}/build/dependencies"
-
-  # null_resourceによるインストールが終わってからZIP化を実行するように依存関係を設定
-  depends_on = [null_resource.install_lambda_dependencies]
+  # null_resourceによるファイル準備が終わってからZIP化を実行するように依存関係を設定
+  depends_on = [null_resource.prepare_lambda_package]
 }
 
 # ----------------------------------------------------
