@@ -66,7 +66,7 @@ data "archive_file" "lambda_function_zip" {
 # S3上のライブラリ用ZIPの情報を取得するためのデータソース
 # ----------------------------------------------------
 data "aws_s3_object" "dependencies_zip" {
-  bucket = aws_s3_bucket.s3_lambda_artifacts.id # s3.tfで定義されているバケット名を指定
+  bucket = aws_s3_bucket.s3_link_checker.id # s3.tfで定義されているバケット名を指定
   key    = "lambda-layers/dependencies.zip"
 }
 
