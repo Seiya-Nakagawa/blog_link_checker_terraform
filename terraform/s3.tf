@@ -30,3 +30,15 @@ resource "aws_s3_bucket_notification" "s3_lambda_trigger" {
     aws_lambda_permission.allow_s3_to_call_lambda
   ]
 }
+
+# "gas_url/" フォルダを作成するためのS3オブジェクト
+resource "aws_s3_object" "gas_url_folder" {
+  # フォルダを作成したいバケットのIDを指定
+  bucket = aws_s3_bucket.s3_link_checker.id
+
+  # フォルダ名/ をキーとして指定
+  key    = "gas_url/"
+
+  # 中身は空のオブジェクトを作成
+  content = ""
+}
