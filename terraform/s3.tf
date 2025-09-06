@@ -22,8 +22,15 @@ resource "aws_s3_bucket_notification" "s3_lambda_trigger" {
   lambda_function {
     lambda_function_arn = aws_lambda_function.link_checker_lambda.arn
     events              = ["s3:ObjectCreated:Put"]
-    filter_prefix       = "link-check-data/"
-    filter_suffix       = ".json"
+  }
+
+  filter_rules {
+    name  = "prefix"
+    value = "link_check_data"
+  }
+  filter_rules {
+    name  = "suffix"
+    value = ".json"
   }
 
   depends_on = [
