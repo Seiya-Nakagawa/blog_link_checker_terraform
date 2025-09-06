@@ -46,7 +46,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
   runtime       = "python3.13"
   role          = aws_iam_role.lambda_exec_role.arn # iam.tfで定義されているロール
 
-  timeout     = 300 # タイムアウト（秒）
+  timeout     = 720 # タイムアウト（秒）
   memory_size = 256 # メモリサイズ（MB）- 複数のライブラリを使うため少し増やすことを推奨
 
   # archive_fileで動的にZIP化したファイルを、デプロイパッケージとして直接指定します
