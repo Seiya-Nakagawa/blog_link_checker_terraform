@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# -------------------------------------------------------------------
+# 【重要】Terraform Cloud環境に必要なツールをインストールする
+# -------------------------------------------------------------------
+# 実行環境にzipコマンドがない場合があるため、apt-getを使ってインストールします。
+# "-y"オプションは、すべての確認プロンプトに自動で"yes"と答えるために必要です。
+apt-get update > /dev/null
+apt-get install -y zip > /dev/null
+# -------------------------------------------------------------------
+
 # スクリプトが置かれているディレクトリ('scripts')を基準にする
 SCRIPT_DIR=$(dirname "$0")
 # プロジェクトのルートディレクトリは、スクリプトの場所から一つ上の階層
@@ -24,5 +33,5 @@ cp "${SOURCE_DIR}/link_checker_lambda.py" "${BUILD_DIR}/pkg/"
 # 一時ディレクトリの中身をZIP化
 (cd "${BUILD_DIR}/pkg" && zip -r "${OUTPUT_PATH}" .)
 
-# Terraformに渡すJSONを出力（絶対パスで渡すのが最も確実）
+# Terraformに渡すJSONを出力
 jq -n --arg path "$OUTPUT_PATH" '{"output_path": $path}'
