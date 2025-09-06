@@ -1,0 +1,16 @@
+# Lambda build artifacts
+lambda/lambda_function_payload.zip
+lambda/lambda_layer_payload.zip
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/

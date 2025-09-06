@@ -9,10 +9,10 @@ resource "aws_sns_topic" "link_checker_sns_topic" {
 # Pythonビルドスクリプトを実行して、ZIPのパスとハッシュを取得する
 # ----------------------------------------------------
 data "external" "lambda_package" {
-  # Terraform Cloud環境でPython3を使ってビルドスクリプトを実行
+  # Python3を使ってビルドスクリプトを実行
   program = ["python3", "${path.cwd}/scripts/build_lambda.py"]
 
-  # ソースコードが変更されたら、このデータソースを再評価（スクリプトを再実行）する
+  # ソースコードが変更されたら、スクリプトを再実行する
   query = {
     script_sha1           = sha1(file("${path.cwd}/scripts/build_lambda.py"))
     lambda_py_sha1        = sha1(file("${path.cwd}/lambda/link_checker_lambda.py"))
@@ -34,6 +34,8 @@ resource "aws_lambda_function" "link_checker_lambda" {
   # ビルドスクリプトが出力したJSONから、ZIPのパスとハッシュを直接参照する
   filename         = data.external.lambda_package.result.output_path
   source_code_hash = data.external.lambda_package.result.output_base64sha256
+
+  # 【重要】Lambdaレイヤーは使用しないため、layers属性は不要です
 
   environment {
     variables = {

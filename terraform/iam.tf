@@ -36,8 +36,8 @@ resource "aws_iam_role_policy" "lambda_s3_access_policy" {
         ],
         Effect = "Allow",
         Resource = [
-          aws_s3_bucket.s3_link_checker_results.arn,
-          "${aws_s3_bucket.s3_link_checker_results.arn}/*"
+          aws_s3_bucket.s3_link_checker.arn,
+          "${aws_s3_bucket.s3_link_checker.arn}/*"
         ]
       }
     ]
