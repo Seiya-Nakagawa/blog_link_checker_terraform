@@ -50,7 +50,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
 # ----------------------------------------------------
 # S3からの実行権限
 # ----------------------------------------------------
-resource "aws_lambda_permission" "allow_s_to_call_lambda" {
+resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.link_checker_lambda.function_name
