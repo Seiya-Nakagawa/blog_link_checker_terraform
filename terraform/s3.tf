@@ -31,14 +31,22 @@ resource "aws_s3_bucket_notification" "s3_lambda_trigger" {
   ]
 }
 
-# "gas_url/" フォルダを作成するためのS3オブジェクト
-resource "aws_s3_object" "gas_url_folder" {
+resource "aws_s3_object" "folders" {
+  # for_eachに、上で定義したフォルダ名のセットを渡します
+  for_each = local.s3_folder_names
+
   # フォルダを作成したいバケットのIDを指定
   bucket = aws_s3_bucket.s3_link_checker.id
 
-  # フォルダ名/ をキーとして指定
-  key    = "gas_url/"
+  # each.keyには、"gas_url/"、"processed_files/"などのフォルダ名が順番に入ります
+  key    = each.key
 
-  # 中身は空のオブジェクトを作成
-  content = ""
+  # フォルダであることを示すContent-Type
+  content_type = "application/x-directory"
+
+  # 中身は空
+  content      = ""
+
+  # 空のコンテンツのMD5ハッシュ値を指定
+  etag         = md5("")
 }
