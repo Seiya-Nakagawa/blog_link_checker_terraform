@@ -20,7 +20,7 @@ s3_client = boto3.client('s3')
 sns_client = boto3.client('sns')
 
 # 環境変数から設定値を取得
-S3_OUTPUT_BUCKET = os.environ.get('S_OUTPUT_BUCKET')
+S3_OUTPUT_BUCKET = os.environ.get('S3_OUTPUT_BUCKET')
 SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')
 
 # 環境変数を堅牢に型変換して取得
