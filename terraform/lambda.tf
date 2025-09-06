@@ -9,11 +9,14 @@ resource "aws_sns_topic" "link_checker_sns_topic" {
 # 外部スクリプトを使ってLambdaパッケージをビルドする
 # ----------------------------------------------------
 data "external" "lambda_package" {
-  # 【変更】スクリプトのパスを修正 (terraform/から見て ../scripts/ になる)
+  # 実行するビルドスクリプトを指定
   program = ["bash", "${path.module}/../scripts/build_lambda.sh"]
 
-  # 【変更】トリガーのファイルパスをすべて修正
-  triggers = {
+  # 【修正】"triggers" の代わりに "query" を使用します。
+  # このqueryマップの値が変更されると、Terraformはこのデータソースを再評価し、
+  # programで指定されたスクリプトを再実行します。
+  # スクリプト自体はqueryの内容を使いませんが、この仕組みで変更を検知します。
+  query = {
     script_sha1           = sha1(file("${path.module}/../scripts/build_lambda.sh"))
     lambda_py_sha1        = sha1(file("${path.module}/../lambda/link_checker_lambda.py"))
     requirements_txt_sha1 = sha1(file("${path.module}/../lambda/requirements.txt"))
@@ -31,10 +34,10 @@ resource "aws_lambda_function" "link_checker_lambda" {
   timeout       = 300
   memory_size   = 128
 
-  # 外部スクリプトが生成したZIPファイルのパスを指定 (この部分は変更なし)
+  # 外部スクリプトが生成したZIPファイルのパスを指定
   filename = data.external.lambda_package.result.output_path
 
-  # ZIPファイルのハッシュを計算 (この部分は変更なし)
+  # ZIPファイルのハッシュを計算
   source_code_hash = filebase64sha256(data.external.lambda_package.result.output_path)
 
   environment {
@@ -43,6 +46,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
     }
   }
   
+  # depends_onは明示的な依存関係として残しておくとより安全です
   depends_on = [data.external.lambda_package]
 }
 
