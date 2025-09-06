@@ -5,7 +5,7 @@ resource "aws_sns_topic" "link_checker_sns_topic" {
 resource "aws_lambda_function" "link_checker_lambda" {
   function_name    = "${var.system_name}-${var.env}-link-checker-lambda"
   handler          = "link_checker_lambda.lambda_handler"
-  runtime          = "python3.9"
+  runtime          = "python3.12"
   role             = aws_iam_role.lambda_exec_role.arn
   timeout          = 300
   memory_size      = 128
