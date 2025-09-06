@@ -68,7 +68,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
   environment {
     variables = {
       SNS_TOPIC_ARN    = aws_sns_topic.link_checker_sns_topic.arn
-      S3_OUTPUT_BUCKET = aws_s3_bucket.s3_link_checker_results.id # 結果を出力するバケット
+      S3_OUTPUT_BUCKET = aws_s3_bucket.s3_link_checker.id # 結果を出力するバケット
       LOG_LEVEL        = "INFO"
     }
   }
@@ -82,5 +82,5 @@ resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.link_checker_lambda.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.s3_link_checker_results.arn # s3.tfで定義されているトリガー用バケット
+  source_arn    = aws_s3_bucket.s3_link_checker.arn # s3.tfで定義されているトリガー用バケット
 }
