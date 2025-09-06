@@ -9,11 +9,11 @@ resource "aws_sns_topic" "link_checker_sns_topic" {
 # 外部スクリプトを使ってLambdaパッケージをビルドする
 # ----------------------------------------------------
 data "external" "lambda_package" {
-  # programのパスは、ワーキングディレクトリ(terraform/)から見た相対パスで指定
-  program = ["bash", "../scripts/build_lambda.sh"]
+  # 【修正】programのパスも、リポジトリのルートを指す`path.cwd`を基準に指定します。
+  # これにより、Terraformのワーキングディレクトリ設定に依存しない、堅牢なパス指定になります。
+  program = ["bash", "${path.cwd}/scripts/build_lambda.sh"]
 
-  # query内のファイルパスは、リポジトリのルートを指す`path.cwd`を使って指定します。
-  # これにより、`file()`関数がワーキングディレクトリの外のファイルを読み込めるようになります。
+  # query内のファイルパスも、同様に`path.cwd`を基準にします。
   query = {
     script_sha1           = sha1(file("${path.cwd}/scripts/build_lambda.sh"))
     lambda_py_sha1        = sha1(file("${path.cwd}/lambda/link_checker_lambda.py"))
@@ -50,7 +50,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
 # ----------------------------------------------------
 # S3からの実行権限
 # ----------------------------------------------------
-resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
+resource "aws_lambda_permission" "allow_s_to_call_lambda" {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.link_checker_lambda.function_name
