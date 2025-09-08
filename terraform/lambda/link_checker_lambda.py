@@ -30,7 +30,7 @@ try:
     MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 3))
     BACKOFF_FACTOR = float(os.environ.get('BACKOFF_FACTOR', 0.5))
     MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 10))
-    CRAWL_WAIT_SECONDS = int(os.environ.get('CRAWL_WAIT_SECONDS', 2)) # クロール待機時間も環境変数から取得可能に
+    CRAWL_WAIT_SECONDS = int(os.environ.get('CRAWL_WAIT_SECONDS', 5)) # クロール待機時間も環境変数から取得可能に
 except (ValueError, TypeError) as e:
     logger.warning(f"環境変数の値が無効です。デフォルト値を使用します。エラー: {e}")
     REQUEST_TIMEOUT = 10
@@ -302,7 +302,6 @@ def lambda_handler(event, context):
         logger.info(f"新規エラー検出数: {len(new_errors)}")
         logger.info(f"修正済みリンク検出数: {len(fixed_links)}")
         
-        # --- ▼ 修正箇所 ▼ ---
         timestamp = datetime.now().isoformat()
         output_summary = {
             "total_links_checked": len(all_detailed_results), 
@@ -312,28 +311,27 @@ def lambda_handler(event, context):
             "timestamp": timestamp
         }
         
-        # 'current_error_details' を除外して出力データを作成
+        # --- ▼ 修正箇所 ▼ ---
+        # 'new_errors' を 'errors' に変更し、すべてのエラー(current_errors)を格納
         output_data = {
             "summary": output_summary, 
             "all_detailed_logs": all_detailed_results, 
-            "new_errors": new_errors, 
+            "errors": current_errors, 
             "fixed_links": fixed_links
         }
+        # --- ▲ 修正箇所 ▲ ---
 
         if S3_OUTPUT_BUCKET:
             now = datetime.now()
             output_key_prefix = now.strftime("%Y-%m-%d")
             timestamp_str = now.strftime("%Y%m%dT%H%M%S")
             
-            # summaryファイルは生成しない
             detailed_key = f"results/{output_key_prefix}/detailed_logs_{timestamp_str}.json"
             
-            # 修正したoutput_dataをS3にアップロード
             s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=detailed_key, Body=json.dumps(output_data, indent=2, ensure_ascii=False))
             logger.info(f"詳細結果を s3://{S3_OUTPUT_BUCKET}/{detailed_key} にアップロードしました")
         else:
             logger.error("S3_OUTPUT_BUCKET 環境変数が設定されていません。結果をアップロードできません。")
-        # --- ▲ 修正箇所 ▲ ---
 
         sns_subject = "リンクチェック完了通知"
         if not new_errors and not fixed_links:
@@ -357,4 +355,4 @@ def lambda_handler(event, context):
     except Exception as e:
         logger.error(f"リンクチェック処理中に予期せぬエラーが発生しました: {e}", exc_info=True)
         publish_sns_notification("リンクチェック処理エラー", f"リンクチェック処理中に予期せぬエラーが発生しました: {e}")
-        return {'statusCode': 500, 'body': json.dumps(f'リンクチェック処理中にエラーが発生しました: {e}')}
+        return {'statusCode': 500, 'body': json.dumps(f'リンクチェック処理中にエラーが発生しました: {e}')}```
