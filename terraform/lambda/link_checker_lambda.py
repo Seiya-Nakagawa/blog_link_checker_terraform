@@ -301,12 +301,22 @@ def lambda_handler(event, context):
 
         logger.info(f"新規エラー検出数: {len(new_errors)}")
         logger.info(f"修正済みリンク検出数: {len(fixed_links)}")
-
+        
         # --- ▼ 修正箇所 ▼ ---
-        # 出力データから不要な 'summary' と 'current_error_details' を削除
+        timestamp = datetime.now().isoformat()
+        output_summary = {
+            "total_links_checked": len(all_detailed_results), 
+            "total_errors": len(current_errors), 
+            "new_errors_count": len(new_errors), 
+            "fixed_links_count": len(fixed_links), 
+            "timestamp": timestamp
+        }
+        
+        # 'current_error_details' を除外して出力データを作成
         output_data = {
-            "all_detailed_logs": all_detailed_results,
-            "new_errors": new_errors,
+            "summary": output_summary, 
+            "all_detailed_logs": all_detailed_results, 
+            "new_errors": new_errors, 
             "fixed_links": fixed_links
         }
 
@@ -314,9 +324,11 @@ def lambda_handler(event, context):
             now = datetime.now()
             output_key_prefix = now.strftime("%Y-%m-%d")
             timestamp_str = now.strftime("%Y%m%dT%H%M%S")
-            # summary_key の生成とアップロード処理を削除
+            
+            # summaryファイルは生成しない
             detailed_key = f"results/{output_key_prefix}/detailed_logs_{timestamp_str}.json"
             
+            # 修正したoutput_dataをS3にアップロード
             s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=detailed_key, Body=json.dumps(output_data, indent=2, ensure_ascii=False))
             logger.info(f"詳細結果を s3://{S3_OUTPUT_BUCKET}/{detailed_key} にアップロードしました")
         else:
