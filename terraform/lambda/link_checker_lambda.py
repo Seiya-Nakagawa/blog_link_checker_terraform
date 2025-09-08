@@ -222,10 +222,9 @@ def lambda_handler(event, context):
                     logger.info(f"ページをクロール中: {current_page_url}")
                     html_content = get_html_content(current_page_url)
                     
-                    # === ページ取得失敗時の処理を改善 ===
                     if not html_content:
                         logger.warning(f"ページのコンテンツ取得に失敗したため、このURLでのクロールを終了します: {current_page_url}")
-                        break # エラーとして記録せず、ループを正常に抜ける
+                        break
                     
                     extracted_links = extract_hatena_ad_links(html_content, current_page_url)
                     logger.info(f"{current_page_url} から {len(extracted_links)} 個の対象広告リンクを抽出しました")
@@ -267,7 +266,6 @@ def lambda_handler(event, context):
                     
                     current_page_url = find_next_page_link(html_content, current_page_url)
 
-                    # === 「429 Too Many Requests」エラー対策 ===
                     if current_page_url:
                         logger.info(f"次のページへアクセスする前に{CRAWL_WAIT_SECONDS}秒待機します...")
                         time.sleep(CRAWL_WAIT_SECONDS)
@@ -304,24 +302,26 @@ def lambda_handler(event, context):
         logger.info(f"新規エラー検出数: {len(new_errors)}")
         logger.info(f"修正済みリンク検出数: {len(fixed_links)}")
 
-        timestamp = datetime.now().isoformat()
-        output_summary = {"total_links_checked": len(all_detailed_results), "total_errors": len(current_errors), "new_errors_count": len(new_errors), "fixed_links_count": len(fixed_links), "timestamp": timestamp}
-        output_data = {"summary": output_summary, "all_detailed_logs": all_detailed_results, "current_error_details": current_errors, "new_errors": new_errors, "fixed_links": fixed_links}
+        # --- ▼ 修正箇所 ▼ ---
+        # 出力データから不要な 'summary' と 'current_error_details' を削除
+        output_data = {
+            "all_detailed_logs": all_detailed_results,
+            "new_errors": new_errors,
+            "fixed_links": fixed_links
+        }
 
         if S3_OUTPUT_BUCKET:
             now = datetime.now()
             output_key_prefix = now.strftime("%Y-%m-%d")
             timestamp_str = now.strftime("%Y%m%dT%H%M%S")
-            summary_key = f"results/{output_key_prefix}/summary_{timestamp_str}.json"
+            # summary_key の生成とアップロード処理を削除
             detailed_key = f"results/{output_key_prefix}/detailed_logs_{timestamp_str}.json"
-            
-            s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=summary_key, Body=json.dumps(output_summary, indent=2, ensure_ascii=False))
-            logger.info(f"サマリーを s3://{S3_OUTPUT_BUCKET}/{summary_key} にアップロードしました")
             
             s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=detailed_key, Body=json.dumps(output_data, indent=2, ensure_ascii=False))
             logger.info(f"詳細結果を s3://{S3_OUTPUT_BUCKET}/{detailed_key} にアップロードしました")
         else:
             logger.error("S3_OUTPUT_BUCKET 環境変数が設定されていません。結果をアップロードできません。")
+        # --- ▲ 修正箇所 ▲ ---
 
         sns_subject = "リンクチェック完了通知"
         if not new_errors and not fixed_links:
