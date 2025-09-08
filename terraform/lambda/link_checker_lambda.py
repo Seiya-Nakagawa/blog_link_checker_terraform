@@ -3,7 +3,7 @@ import os
 import json
 import urllib.parse
 import logging
-import time  # サーバー負荷軽減のためのtimeモジュールをインポート
+import time
 import boto3
 import requests
 from bs4 import BeautifulSoup
@@ -64,20 +64,14 @@ def get_html_content(url):
         logger.error(f"URL取得エラー {url}: {e}")
         return None
 
-# --- ここから元のロジックで必要だった関数を再定義 ---
-
 def extract_hatena_ad_links(html_content, base_url):
     """はてなブログのHTMLから、指定された条件の広告リンクのみを抽出する"""
     links = set()
     if not html_content:
         return list(links)
-    
     soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # ページ内の全ての「(※一部、広告・宣伝が含まれます。)」を探す
     for p_tag in soup.find_all('p'):
         if p_tag.get_text(strip=True) == "(※一部、広告・宣伝が含まれます。)":
-            # その直後にあるpタグを探す
             next_p = p_tag.find_next_sibling('p')
             if next_p:
                 a_tag = next_p.find('a', href=True)
@@ -85,17 +79,14 @@ def extract_hatena_ad_links(html_content, base_url):
                     href = a_tag['href']
                     full_url = urllib.parse.urljoin(base_url, href)
                     links.add(full_url)
-    
     return list(links)
 
 def find_next_page_link(html_content, base_url):
     """はてなブログのHTMLから「次のページ」のリンクURLを取得する"""
     if not html_content:
         return None
-        
     soup = BeautifulSoup(html_content, 'html.parser')
     next_link_tag = soup.find('a', rel='next', href=True)
-    
     if next_link_tag:
         next_page_url = urllib.parse.urljoin(base_url, next_link_tag['href'])
         logger.info(f"次のページのリンクが見つかりました: {next_page_url}")
@@ -103,8 +94,6 @@ def find_next_page_link(html_content, base_url):
     else:
         logger.info("次のページのリンクは見つかりませんでした。クロールを終了します。")
         return None
-        
-# --- ここまでが再定義した関数 ---
 
 def extract_links(html_content, base_url):
     """HTMLコンテンツから全てのhrefリンクを抽出する（汎用・ライブドアブログ用）"""
@@ -133,40 +122,33 @@ def extract_article_links_for_livedoor(html_content, base_url):
     return list(article_links)
 
 def check_link_status(url):
-    """単一のリンクのステータスを確認する"""
+    """【修正】単一のリンクのステータスを確認する（ロジックを簡素化）"""
     try:
         session = requests_retry_session()
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = session.head(url, timeout=REQUEST_TIMEOUT, headers=headers, allow_redirects=True)
-
-        status_code = response.status_code
-        final_url = response.url
-        error_message = None
-        status = "OK"
-
-        if not (200 <= status_code < 400):
-            status = "ERROR"
-            error_message = f"ステータスコード: {status_code}"
-        else:
-            # ステータスがOKの場合でも、特定の条件でエラーとする
-            parsed_url = urllib.parse.urlparse(final_url)
-            if parsed_url.netloc == "jass-net.com":
-                status = "ERROR"
-                error_message = "リンク先のドメインが 'jass-net.com' です"
-            elif "hatena" in final_url:
-                status = "ERROR"
-                error_message = "リンク先のURLに 'hatena' が含まれています"
-
-        # HTTPErrorを明示的に発生させる
+        
+        # 4xx, 5xx系のエラーステータスコードの場合、ここで例外を発生させる
         response.raise_for_status()
 
-        return {"status": status, "status_code": status_code, "final_url": final_url, "error_message": error_message}
+        # --- ここからはステータスコードが正常(2xx, 3xx)な場合のみ実行される ---
+        final_url = response.url
+        
+        # カスタムルールに基づくエラーチェック
+        parsed_url = urllib.parse.urlparse(final_url)
+        if parsed_url.netloc == "jass-net.com":
+            return {"status": "ERROR", "status_code": response.status_code, "final_url": final_url, "error_message": "リンク先のドメインが 'jass-net.com' です"}
+        if "hatena" in final_url:
+            return {"status": "ERROR", "status_code": response.status_code, "final_url": final_url, "error_message": "リンク先のURLに 'hatena' が含まれています"}
+
+        # すべてのチェックを通過した場合
+        return {"status": "OK", "status_code": response.status_code, "final_url": final_url, "error_message": None}
+
     except requests.exceptions.HTTPError as e:
-        # ステータスコードが4xx, 5xxの場合
-        error_msg = str(e) if "error_message" not in locals() else error_message
-        return {"status": "ERROR", "status_code": e.response.status_code if e.response else None, "final_url": e.response.url if e.response else url, "error_message": error_msg}
+        # 4xx, 5xx系のエラーをここで捕捉
+        return {"status": "ERROR", "status_code": e.response.status_code if e.response else None, "final_url": e.response.url if e.response else url, "error_message": str(e)}
     except requests.exceptions.RequestException as e:
-        # タイムアウトや接続エラーなど
+        # タイムアウトや接続エラーなどをここで捕捉
         return {"status": "ERROR", "status_code": None, "final_url": url, "error_message": str(e)}
 
 def publish_sns_notification(subject, message):
@@ -208,7 +190,6 @@ def process_page_links(page_url, blog_url, all_detailed_results, current_errors)
                 all_detailed_results.append({"blog_url": blog_url, "page_url": page_url, "checked_link": link, "status": "ERROR", "status_code": None, "final_url": link, "error_message": str(exc), "timestamp": datetime.now().isoformat()})
                 current_errors.append({"blog_url": blog_url, "page_url": page_url, "checked_link": link, "error_reason": str(exc)})
 
-
 def lambda_handler(event, context):
     """Lambda関数のメインハンドラ"""
     logger.info(f"イベント受信: {json.dumps(event)}")
@@ -236,6 +217,11 @@ def lambda_handler(event, context):
         current_errors = []
 
         for target_item in target_urls:
+            # 【修正】入力データの形式が不正な場合に備える
+            if not isinstance(target_item, dict):
+                logger.warning(f"リスト内の項目が辞書ではないためスキップします: {target_item}")
+                continue
+            
             blog_url = target_item.get('url')
             if not blog_url:
                 logger.warning(f"URLがないためターゲット項目をスキップします: {target_item}")
@@ -248,56 +234,33 @@ def lambda_handler(event, context):
                 logger.info(f"はてなブログを処理中: {blog_url}")
                 current_page_url = blog_url
                 
-                # --- ここをwhileループに戻し、ページネーションをたどる ---
                 while current_page_url:
                     logger.info(f"ページをクロール中: {current_page_url}")
                     html_content = get_html_content(current_page_url)
                     
                     if not html_content:
                         logger.warning(f"ページのコンテンツ取得に失敗したため、このURLでのクロールを終了します: {current_page_url}")
-                        # ページ取得失敗時はエラーとして記録せず、次のブログの処理に移る
                         break 
                     
-                    # ページ内の指定広告リンクをすべて抽出
                     extracted_links = extract_hatena_ad_links(html_content, current_page_url)
                     logger.info(f"{current_page_url} から {len(extracted_links)} 個の対象広告リンクを抽出しました")
 
-                    # 抽出したリンクのステータスを並列でチェック
                     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                         future_to_link = {executor.submit(check_link_status, link): link for link in extracted_links}
                         for future in as_completed(future_to_link):
                             link = future_to_link[future]
                             try:
                                 check_result = future.result()
-                                
-                                detailed_result = {
-                                    "blog_url": blog_url, 
-                                    "page_url": current_page_url, 
-                                    "checked_link": link, 
-                                    "status": check_result["status"], 
-                                    "status_code": check_result["status_code"], 
-                                    "final_url": check_result["final_url"], 
-                                    "error_message": check_result["error_message"], 
-                                    "timestamp": datetime.now().isoformat()
-                                }
+                                detailed_result = {"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "status": check_result["status"], "status_code": check_result["status_code"], "final_url": check_result["final_url"], "error_message": check_result["error_message"], "timestamp": datetime.now().isoformat()}
                                 all_detailed_results.append(detailed_result)
-                                
                                 if check_result["status"] == "ERROR":
-                                    current_errors.append({
-                                        "blog_url": blog_url, 
-                                        "page_url": current_page_url, 
-                                        "checked_link": link, 
-                                        "error_reason": check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"
-                                    })
+                                    current_errors.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "error_reason": check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"})
                             except Exception as exc:
                                 logger.error(f"リンクチェック中に例外が発生しました {link}: {exc}")
                                 all_detailed_results.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "status": "ERROR", "status_code": None, "final_url": link, "error_message": str(exc), "timestamp": datetime.now().isoformat()})
                                 current_errors.append({"blog_url": blog_url, "page_url": current_page_url, "checked_link": link, "error_reason": str(exc)})
                     
-                    # 次のページのURLを取得
                     current_page_url = find_next_page_link(html_content, current_page_url)
-
-                    # 次のページがある場合は、サーバー負荷軽減のために待機
                     if current_page_url:
                         logger.info(f"次のページへアクセスする前に{CRAWL_WAIT_SECONDS}秒待機します...")
                         time.sleep(CRAWL_WAIT_SECONDS)
@@ -334,7 +297,6 @@ def lambda_handler(event, context):
         logger.info(f"新規エラー検出数: {len(new_errors)}")
         logger.info(f"修正済みリンク検出数: {len(fixed_links)}")
 
-        timestamp = datetime.now().isoformat()
         output_data = {"all_detailed_logs": all_detailed_results, "new_errors": new_errors, "fixed_links": fixed_links}
 
         if S3_OUTPUT_BUCKET:
