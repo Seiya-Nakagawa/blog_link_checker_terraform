@@ -30,7 +30,7 @@ try:
     MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 3))
     BACKOFF_FACTOR = float(os.environ.get('BACKOFF_FACTOR', 0.5))
     MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 10))
-    CRAWL_WAIT_SECONDS = int(os.environ.get('CRAWL_WAIT_SECONDS', 5)) # クロール待機時間も環境変数から取得可能に
+    CRAWL_WAIT_SECONDS = int(os.environ.get('CRAWL_WAIT_SECONDS', 2)) # クロール待機時間も環境変数から取得可能に
 except (ValueError, TypeError) as e:
     logger.warning(f"環境変数の値が無効です。デフォルト値を使用します。エラー: {e}")
     REQUEST_TIMEOUT = 10
@@ -185,7 +185,9 @@ def lambda_handler(event, context):
 
     if 'Records' not in event or not event['Records']:
         logger.error("イベントにレコードが見つかりません。")
-        return {'statusCode': 400, 'body': json.dumps('S3レコードがイベントに見つかりません。')}
+        # --- ▼ 修正箇所 ▼ ---
+        return {'statusCode': 400, 'body': json.dumps({'message': 'S3レコードがイベントに見つかりません。'})}
+        # --- ▲ 修正箇所 ▲ ---
 
     s3_record = event['Records'][0]['s3']
     input_bucket_name = s3_record['bucket']['name']
@@ -311,15 +313,12 @@ def lambda_handler(event, context):
             "timestamp": timestamp
         }
         
-        # --- ▼ 修正箇所 ▼ ---
-        # 'new_errors' を 'errors' に変更し、すべてのエラー(current_errors)を格納
         output_data = {
             "summary": output_summary, 
             "all_detailed_logs": all_detailed_results, 
             "errors": current_errors, 
             "fixed_links": fixed_links
         }
-        # --- ▲ 修正箇所 ▲ ---
 
         if S3_OUTPUT_BUCKET:
             now = datetime.now()
@@ -350,9 +349,13 @@ def lambda_handler(event, context):
         
         publish_sns_notification(sns_subject, sns_message)
 
-        return {'statusCode': 200, 'body': json.dumps('リンクチェック処理が正常に完了しました！')}
+        # --- ▼ 修正箇所 ▼ ---
+        return {'statusCode': 200, 'body': json.dumps({'message': 'リンクチェック処理が正常に完了しました！'})}
+        # --- ▲ 修正箇所 ▲ ---
 
     except Exception as e:
         logger.error(f"リンクチェック処理中に予期せぬエラーが発生しました: {e}", exc_info=True)
         publish_sns_notification("リンクチェック処理エラー", f"リンクチェック処理中に予期せぬエラーが発生しました: {e}")
-        return {'statusCode': 500, 'body': json.dumps(f'リンクチェック処理中にエラーが発生しました: {e}')}```
+        # --- ▼ 修正箇所 ▼ ---
+        return {'statusCode': 500, 'body': json.dumps({'message': f'リンクチェック処理中にエラーが発生しました: {e}'})}
+        # --- ▲ 修正箇所 ▲ ---
