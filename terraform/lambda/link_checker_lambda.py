@@ -30,14 +30,14 @@ try:
     MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 3))
     BACKOFF_FACTOR = float(os.environ.get('BACKOFF_FACTOR', 0.5))
     MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 10))
-    CRAWL_WAIT_SECONDS = int(os.environ.get('CRAWL_WAIT_SECONDS', 8)) # クロール待機時間も環境変数から取得可能に
+    CRAWL_WAIT_SECONDS = int(os.environ.get('CRAWL_WAIT_SECONDS', 5)) # クロール待機時間も環境変数から取得可能に
 except (ValueError, TypeError) as e:
     logger.warning(f"環境変数の値が無効です。デフォルト値を使用します。エラー: {e}")
     REQUEST_TIMEOUT = 10
     MAX_RETRIES = 3
     BACKOFF_FACTOR = 0.5
     MAX_WORKERS = 10
-    CRAWL_WAIT_SECONDS = 2
+    CRAWL_WAIT_SECONDS = 5
 
 def requests_retry_session(retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, status_forcelist=(500, 502, 503, 504), session=None):
     """リトライ機能付きのrequestsセッションをセットアップする"""
