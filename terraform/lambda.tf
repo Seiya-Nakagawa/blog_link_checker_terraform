@@ -61,6 +61,11 @@ resource "aws_lambda_function" "link_checker_lambda" {
     variables = {
       S3_OUTPUT_BUCKET = aws_s3_bucket.s3_link_checker.id # 結果を出力するバケット
       LOG_LEVEL        = "INFO"
+      REQUEST_TIMEOUT  = 10
+      MAX_RETRIES      = 3
+      BACKOFF_FACTOR = 2.0
+      MAX_WORKERS = 1
+      CRAWL_WAIT_SECONDS = 5
     }
   }
 }
