@@ -59,13 +59,14 @@ resource "aws_lambda_function" "link_checker_lambda" {
   # Lambda関数内で使用する環境変数を定義します
   environment {
     variables = {
-      S3_OUTPUT_BUCKET = aws_s3_bucket.s3_link_checker.id # 結果を出力するバケット
-      LOG_LEVEL        = "INFO"
-      REQUEST_TIMEOUT  = 10
-      MAX_RETRIES      = 3
-      BACKOFF_FACTOR = 2.0
-      MAX_WORKERS = 1
+      S3_OUTPUT_BUCKET   = aws_s3_bucket.s3_link_checker.id # 結果を出力するバケット
+      LOG_LEVEL          = "INFO"
+      REQUEST_TIMEOUT    = 10
+      MAX_RETRIES        = 3
+      BACKOFF_FACTOR     = 2.0
+      MAX_WORKERS        = 1
       CRAWL_WAIT_SECONDS = 5
+      NG_WORDS           = "ご指定のページが見つかりませんでした"
     }
   }
 }
