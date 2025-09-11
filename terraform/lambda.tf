@@ -67,6 +67,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
       MAX_WORKERS        = 1
       CRAWL_WAIT_SECONDS = 5
       NG_WORDS           = "ご指定のページが見つかりませんでした,リンクが無効です"
+      GAS_WEBAPP_URL     = "https://script.google.com/macros/s/AKfycbyFFJGBR5GegzTVOZNZOPbFdR6uGPm1-pqLY63K_ZRhecggcvD9QeD2HTiFQoM7aWVY/exec"
     }
   }
 }
