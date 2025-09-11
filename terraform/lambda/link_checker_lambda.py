@@ -303,9 +303,8 @@ def lambda_handler(event, context):
         
         if S3_OUTPUT_BUCKET:
             now = datetime.now()
-            output_key_prefix = now.strftime("%Y-%m-%d")
             timestamp_str = now.strftime("%Y%m%dT%H%M%S")
-            detailed_key = f"results/{output_key_prefix}/detailed_logs_{timestamp_str}.json"
+            detailed_key = f"results/linkcheck_result.json"
             s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=detailed_key, Body=json.dumps(output_data, indent=2, ensure_ascii=False))
             logger.info(f"詳細結果を s3://{S3_OUTPUT_BUCKET}/{detailed_key} にアップロードしました")
             
