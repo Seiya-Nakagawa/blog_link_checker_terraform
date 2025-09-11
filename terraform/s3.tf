@@ -2,9 +2,9 @@ resource "aws_s3_bucket" "s3_link_checker" {
   bucket = "${var.system_name}-${var.env}-s3"
 
   tags = {
-    Name        = "${var.system_name}-${var.env}-s3",
-    SystemName  = var.system_name,
-    Env         = var.env,
+    Name       = "${var.system_name}-${var.env}-s3",
+    SystemName = var.system_name,
+    Env        = var.env,
   }
 }
 
@@ -39,14 +39,14 @@ resource "aws_s3_object" "folders" {
   bucket = aws_s3_bucket.s3_link_checker.id
 
   # each.keyには、"gas_url/"、"processed_files/"などのフォルダ名が順番に入ります
-  key    = each.key
+  key = each.key
 
   # フォルダであることを示すContent-Type
   content_type = "application/x-directory"
 
   # 中身は空
-  content      = ""
+  content = ""
 
   # 空のコンテンツのMD5ハッシュ値を指定
-  etag         = md5("")
+  etag = md5("")
 }
