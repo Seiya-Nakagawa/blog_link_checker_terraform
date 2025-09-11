@@ -1,9 +1,9 @@
 # ----------------------------------------------------
 # S3上のライブラリ用ZIPの情報を取得するためのデータソース
 # ----------------------------------------------------
-data "aws_s3_object" "dependencies_zip" {
+data "aws_s3_object" "lambda_libraries_zip" {
   bucket = aws_s3_bucket.s3_link_checker.id # s3.tfで定義されているアーティファクト用バケット
-  key    = "lambda-layers/dependencies.zip"
+  key    = "lambda-layers/${var.system_name}_python_libraries.zip"
 }
 
 # ----------------------------------------------------
@@ -11,17 +11,14 @@ data "aws_s3_object" "dependencies_zip" {
 # ライブラリ(dependencies.zip)は、手動でS3にアップロードされていることを前提とします。
 # ----------------------------------------------------
 resource "aws_lambda_layer_version" "dependencies_layer" {
-  layer_name = "${var.system_name}-${var.env}-dependencies"
-  description = "Shared libraries for link checker"
-
-  # 手動でS3にアップロードしたライブラリ用ZIPファイルを参照します
-  s3_bucket = aws_s3_bucket.s3_link_checker.id
-  s3_key    = "lambda-layers/${var.system_name}_python_libraries.zip"
+  layer_name          = "${var.system_name}-${var.env}-laver-python-libraries"
+  description         = "Shared libraries for link checker"
+  s3_bucket           = aws_s3_bucket.s3_link_checker.id
+  s3_key              = data.aws_s3_object.lambda_libraries_zip.key
 
   # S3上のZIPが更新されたことを検知するために、そのファイルのETag(ハッシュ値)を監視します
-  source_code_hash = data.aws_s3_object.dependencies_zip.etag
-
-  compatible_runtimes = ["python3.13"]
+  source_code_hash    = data.aws_s3_object.dependencies_zip.etag
+  compatible_runtimes = var.lambda_runtime_version
 }
 
 # ----------------------------------------------------
@@ -41,33 +38,29 @@ data "archive_file" "lambda_function_zip" {
 # Lambda関数を定義
 # ----------------------------------------------------
 resource "aws_lambda_function" "link_checker_lambda" {
-  function_name = "${var.system_name}-${var.env}-link-checker-lambda"
-  handler       = "link_checker_lambda.lambda_handler"
-  runtime       = "python3.13"
-  role          = aws_iam_role.lambda_exec_role.arn # iam.tfで定義されているロール
-
-  timeout     = 720 # タイムアウト（秒）
-  memory_size = 256 # メモリサイズ（MB）- 複数のライブラリを使うため少し増やすことを推奨
+  function_name     = "${var.system_name}-${var.env}-link-checker-lambda"
+  handler           = "link_checker_lambda.lambda_handler"
+  runtime           = var.lambda_runtime_version
+  timeout           = var.lambda_timeout_seconds # タイムアウト（秒）
+  memory_size       = var.lambda_memory_size     # メモリサイズ（MB）
 
   # archive_fileで動的にZIP化したファイルを、デプロイパッケージとして直接指定します
-  filename         = data.archive_file.lambda_function_zip.output_path
-  source_code_hash = data.archive_file.lambda_function_zip.output_base64sha256
+  filename          = data.archive_file.lambda_function_zip.output_path
+  source_code_hash  = data.archive_file.lambda_function_zip.output_base64sha256
 
-  # 【重要】作成したLambdaレイヤーをこの関数に関連付けます
-  layers = [aws_lambda_layer_version.dependencies_layer.arn]
+  layers            = [aws_lambda_layer_version.dependencies_layer.arn]
 
   # Lambda関数内で使用する環境変数を定義します
   environment {
     variables = {
       S3_OUTPUT_BUCKET   = aws_s3_bucket.s3_link_checker.id # 結果を出力するバケット
-      LOG_LEVEL          = "INFO"
-      REQUEST_TIMEOUT    = 10
-      MAX_RETRIES        = 3
-      BACKOFF_FACTOR     = 2.0
-      MAX_WORKERS        = 1
-      CRAWL_WAIT_SECONDS = 5
-      NG_WORDS           = "ご指定のページが見つかりませんでした,リンクが無効です"
-      GAS_WEBAPP_URL     = "https://script.google.com/macros/s/AKfycbyFFJGBR5GegzTVOZNZOPbFdR6uGPm1-pqLY63K_ZRhecggcvD9QeD2HTiFQoM7aWVY/exec"
+      LOG_LEVEL          = var.lambda_log_level
+      REQUEST_TIMEOUT    = var.lambda_request_timeout
+      MAX_RETRIES        = var.lambda_max_retries
+      BACKOFF_FACTOR     = var.lambda_backoff_factor
+      MAX_WORKERS        = var.lambda_max_workers
+      CRAWL_WAIT_SECONDS = var.lambda_crawl_wait_seconds
+      NG_WORDS           = var.lambda_ng_words
     }
   }
 }
