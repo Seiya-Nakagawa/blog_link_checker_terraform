@@ -16,7 +16,7 @@ resource "aws_lambda_layer_version" "dependencies_layer" {
 
   # 手動でS3にアップロードしたライブラリ用ZIPファイルを参照します
   s3_bucket = aws_s3_bucket.s3_link_checker.id
-  s3_key    = "lambda-layers/${var.system_name}-${var.env}_python_libraries.zip"
+  s3_key    = "lambda-layers/${var.system_name}_python_libraries.zip"
 
   # S3上のZIPが更新されたことを検知するために、そのファイルのETag(ハッシュ値)を監視します
   source_code_hash = data.aws_s3_object.dependencies_zip.etag
