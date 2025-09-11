@@ -25,7 +25,7 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 # AWS S3 サービスクライアントを初期化
 s3_client = boto3.client('s3')
 
-# --- 定数定義 (マジックナンバーの排除) ---
+# --- 定数定義 ---
 # Meta refreshによるリダイレクトを追跡する最大回数
 MAX_META_REFRESH_REDIRECTS = 5
 # HTTPリクエストでリトライを行う対象のステータスコード
@@ -387,6 +387,9 @@ def lambda_handler(event, context):
             detailed_key = f"results/linkcheck_result.csv"
             
             if all_detailed_results:
+                # blog_url, page_url, checked_link の優先順位でソート
+                all_detailed_results.sort(key=lambda x: (x.get('blog_url', ''), x.get('page_url', ''), x.get('checked_link', '')))
+                
                 output = io.StringIO()
                 headers = all_detailed_results[0].keys()
                 writer = csv.DictWriter(output, fieldnames=headers)
