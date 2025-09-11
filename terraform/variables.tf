@@ -20,7 +20,7 @@ variable "aws_account_id" {
 
 variable "lambda_runtime_version" {
   description = "Lambdaランタイムのバージョン"
-  type        = string
+  type        = list(string)
 }
 
 variable "lambda_timeout_seconds" {

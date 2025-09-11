@@ -19,7 +19,7 @@ resource "aws_lambda_layer_version" "dependencies_layer" {
 resource "aws_lambda_function" "link_checker_lambda" {
   function_name = "${var.system_name}-${var.env}-link-checker-lambda"
   handler       = "link_checker_lambda.lambda_handler"
-  runtime       = var.lambda_runtime_version
+  runtime       = var.lambda_runtime_version[0]
   timeout       = var.lambda_timeout_seconds # タイムアウト（秒）
   memory_size   = var.lambda_memory_size     # メモリサイズ（MB）
   role          = aws_iam_role.lambda_exec_role.arn
