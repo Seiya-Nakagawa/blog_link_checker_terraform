@@ -22,7 +22,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
   runtime       = var.lambda_runtime_version
   timeout       = var.lambda_timeout_seconds # タイムアウト（秒）
   memory_size   = var.lambda_memory_size     # メモリサイズ（MB）
-
+  role          = aws_iam_role.lambda_exec_role.arn
   # archive_fileで動的にZIP化したファイルを、デプロイパッケージとして直接指定します
   filename         = data.archive_file.lambda_function_zip.output_path
   source_code_hash = data.archive_file.lambda_function_zip.output_base64sha256
