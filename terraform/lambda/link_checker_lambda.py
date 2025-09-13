@@ -310,10 +310,9 @@ def lambda_handler(event, context):
             s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=detailed_key, Body=csv_body.encode('utf-8'), ContentType='text/csv')
             logger.info(f"詳細結果を s3://{S3_OUTPUT_BUCKET}/{detailed_key} にアップロードしました")
 
-            # ★★★ ここから追加 ★★★
             # 2. 正常完了フラグファイルのアップロード
             try:
-                flag_file_key = "status/lambda_completion_status.json"
+                flag_file_key = "lambda_completion_status.json"
                 # JST（GMT+9）の現在日時を取得
                 jst = timezone(timedelta(hours=9), 'JST')
                 jst_now = datetime.now(jst)
