@@ -11,7 +11,7 @@ import requests
 import csv
 import io
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone, timedelta # ★ timezone, timedelta をインポート
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,7 +36,7 @@ PER_ARTICLE_WAIT_SECONDS = 1
 SUCCESS_STATUS_LOWER_BOUND = 200
 # リンクチェック成功とみなすHTTPステータスコードの上限 (3xx リダイレクトを含む)
 SUCCESS_STATUS_UPPER_BOUND = 400
-# ★★★ 修正点: CSV出力時のヘッダーを「手動リストのキー」に統一 ★★★
+# CSV出力時のヘッダーを「手動リストのキー」に統一
 CSV_HEADERS = ["spreadsheet_link", "blog_article_url", "affiliate_link", "status", "status_code", "final_url", "error_message", "timestamp"]
 
 
@@ -213,18 +213,14 @@ def lambda_handler(event, context):
                                 link = future_to_link[future]
                                 try:
                                     check_result = future.result()
-                                    status = "OK"
-                                    error_reason = None
+                                    status, error_reason = "OK", None
                                     is_successful_status = check_result["status_code"] and SUCCESS_STATUS_LOWER_BOUND <= check_result["status_code"] < SUCCESS_STATUS_UPPER_BOUND
-                                    if not is_successful_status or check_result["error_message"]:
-                                        status = "ERROR"
-                                        error_reason = check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"
+                                    if not is_successful_status or check_result["error_message"]: status, error_reason = "ERROR", check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"
                                     if status == "OK":
                                         final_url, parsed_final_url, parsed_blog_url = check_result["final_url"], urllib.parse.urlparse(check_result["final_url"]), urllib.parse.urlparse(blog_url)
                                         if parsed_final_url.netloc == "jass-net.com": status, error_reason = "ERROR", "リンク先のドメインが 'jass-net.com' です"
                                         elif "hatena" in final_url and parsed_final_url.netloc != parsed_blog_url.netloc: status, error_reason = "ERROR", "リンク先のURLに 'hatena' が含まれています"
                                     
-                                    # ★★★ 修正点: 結果を新しいキー名で格納 ★★★
                                     all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": current_page_url, "affiliate_link": link, "status": status, "status_code": check_result["status_code"], "final_url": check_result["final_url"], "error_message": error_reason, "timestamp": datetime.now().isoformat()})
                                 except Exception as exc:
                                     logger.error(f"リンクチェック中に例外が発生しました {link}: {exc}")
@@ -302,17 +298,45 @@ def lambda_handler(event, context):
         logger.info(f"詳細結果の合計: {len(all_detailed_results)}")
 
         if S3_OUTPUT_BUCKET:
-            detailed_key = "results/linkcheck_result.csv"
+            # 1. 結果CSVファイルのアップロード
+            detailed_key = "linkcheck_result.csv"
             output = io.StringIO()
             writer = csv.DictWriter(output, fieldnames=CSV_HEADERS)
             writer.writeheader()
             if all_detailed_results:
-                # ★★★ 修正点: 新しいキー名でソート ★★★
                 all_detailed_results.sort(key=lambda x: (x.get('spreadsheet_link', ''), x.get('blog_article_url', ''), x.get('affiliate_link', '')))
                 writer.writerows(all_detailed_results)
             csv_body = output.getvalue()
             s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=detailed_key, Body=csv_body.encode('utf-8'), ContentType='text/csv')
             logger.info(f"詳細結果を s3://{S3_OUTPUT_BUCKET}/{detailed_key} にアップロードしました")
+
+            # ★★★ ここから追加 ★★★
+            # 2. 正常完了フラグファイルのアップロード
+            try:
+                flag_file_key = "status/lambda_completion_status.json"
+                # JST（GMT+9）の現在日時を取得
+                jst = timezone(timedelta(hours=9), 'JST')
+                jst_now = datetime.now(jst)
+                
+                flag_data = {
+                    "status": "SUCCESS",
+                    "last_success_date": jst_now.strftime('%Y-%m-%d'), # YYYY-MM-DD形式
+                    "last_success_datetime_jst": jst_now.isoformat()
+                }
+                
+                s3_client.put_object(
+                    Bucket=S3_OUTPUT_BUCKET,
+                    Key=flag_file_key,
+                    Body=json.dumps(flag_data, indent=2),
+                    ContentType='application/json'
+                )
+                logger.info(f"完了フラグファイルを s3://{S3_OUTPUT_BUCKET}/{flag_file_key} にアップロードしました")
+
+            except Exception as flag_err:
+                # フラグファイルの配置に失敗しても、メイン処理は成功しているのでエラーログだけ記録
+                logger.error(f"完了フラグファイルのアップロードに失敗しました: {flag_err}")
+            # ★★★ ここまで追加 ★★★
+
         else:
             logger.error("S3_OUTPUT_BUCKET 環境変数が設定されていません。結果をアップロードできません。")
         
