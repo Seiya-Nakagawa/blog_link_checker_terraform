@@ -168,8 +168,15 @@ def lambda_handler(event, context):
     try:
         logger.info(f"イベント受信: {json.dumps(event)}")
 
+        # NGワードを環境変数から取得
         ng_words_str = os.environ.get('NG_WORDS', '')
         ng_words = [word.strip() for word in ng_words_str.split(',') if word.strip()]
+        
+        ### 追加: 除外文字列を環境変数から取得 ###
+        exclude_strings_str = os.environ.get('EXCLUDE_STRINGS', '')
+        exclude_strings = [s.strip() for s in exclude_strings_str.split(',') if s.strip()]
+        if exclude_strings:
+            logger.info(f"チェック対象から除外する文字列: {exclude_strings}")
         
         if 'Records' not in event or not event['Records']:
             return {'statusCode': 400, 'body': json.dumps({'message': 'S3レコードがイベントに見つかりません。'}, ensure_ascii=False)}
@@ -203,12 +210,16 @@ def lambda_handler(event, context):
                     extracted_links = extract_ad_links(html_content, current_page_url)
                     
                     if extracted_links is not None:
-                        if not extracted_links:
+                        ### 追加: 除外文字列を含むリンクをフィルタリング ###
+                        filtered_links = [link for link in extracted_links if not any(ex_str in link for ex_str in exclude_strings)]
+                        
+                        if not filtered_links: # ### 変更: extracted_links から filtered_links に変更 ###
                             error_reason = "対象の広告リンクが見つかりませんでした"
                             all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": current_page_url, "affiliate_link": current_page_url, "status": "ERROR", "status_code": None, "final_url": current_page_url, "error_message": error_reason, "timestamp": datetime.now().isoformat()})
                         
                         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                            future_to_link = {executor.submit(check_link_status, link, ng_words): link for link in extracted_links}
+                            ### 変更: filtered_links を使用 ###
+                            future_to_link = {executor.submit(check_link_status, link, ng_words): link for link in filtered_links}
                             for future in as_completed(future_to_link):
                                 link = future_to_link[future]
                                 try:
@@ -247,12 +258,16 @@ def lambda_handler(event, context):
                     extracted_links = extract_ad_links(article_html, article_url)
                     
                     if extracted_links is not None:
-                        if not extracted_links:
+                        ### 追加: 除外文字列を含むリンクをフィルタリング ###
+                        filtered_links = [link for link in extracted_links if not any(ex_str in link for ex_str in exclude_strings)]
+
+                        if not filtered_links: # ### 変更: extracted_links から filtered_links に変更 ###
                             error_reason = "対象の広告リンクが見つかりませんでした"
                             all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": article_url, "affiliate_link": article_url, "status": "ERROR", "status_code": None, "final_url": article_url, "error_message": error_reason, "timestamp": datetime.now().isoformat()})
 
                         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                            future_to_link = {executor.submit(check_link_status, link, ng_words): link for link in extracted_links}
+                            ### 変更: filtered_links を使用 ###
+                            future_to_link = {executor.submit(check_link_status, link, ng_words): link for link in filtered_links}
                             for future in as_completed(future_to_link):
                                 link = future_to_link[future]
                                 try:
@@ -274,8 +289,16 @@ def lambda_handler(event, context):
         
         # --- 手動URLリスト（クロール不要）の直接チェック処理 ---
         logger.info(f"手動URLリストの処理を開始します。件数: {len(manual_urls)}")
+
+        ### 追加: 除外文字列を含むURLをフィルタリング ###
+        filtered_manual_urls = [
+            item for item in manual_urls 
+            if item.get('affiliate_link') and not any(ex_str in item.get('affiliate_link') for ex_str in exclude_strings)
+        ]
+        
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            future_to_manual_item = {executor.submit(check_link_status, item.get('affiliate_link'), ng_words): item for item in manual_urls if item.get('affiliate_link')}
+            ### 変更: filtered_manual_urls を使用 ###
+            future_to_manual_item = {executor.submit(check_link_status, item.get('affiliate_link'), ng_words): item for item in filtered_manual_urls}
             for future in as_completed(future_to_manual_item):
                 manual_item = future_to_manual_item[future]
                 spreadsheet_link, blog_article_url, affiliate_link = manual_item.get('spreadsheet_link'), manual_item.get('blog_article_url'), manual_item.get('affiliate_link')
@@ -334,7 +357,6 @@ def lambda_handler(event, context):
             except Exception as flag_err:
                 # フラグファイルの配置に失敗しても、メイン処理は成功しているのでエラーログだけ記録
                 logger.error(f"完了フラグファイルのアップロードに失敗しました: {flag_err}")
-            # ★★★ ここまで追加 ★★★
 
         else:
             logger.error("S3_OUTPUT_BUCKET 環境変数が設定されていません。結果をアップロードできません。")

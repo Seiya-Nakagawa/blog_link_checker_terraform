@@ -40,6 +40,7 @@ resource "aws_lambda_function" "link_checker_lambda" {
       MAX_WORKERS        = var.lambda_max_workers
       CRAWL_WAIT_SECONDS = var.lambda_crawl_wait_seconds
       NG_WORDS           = var.lambda_ng_words
+      EXCLUDE_STRINGS    = var.lambda_exclude_strings
     }
   }
 }
