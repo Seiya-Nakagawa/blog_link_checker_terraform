@@ -67,3 +67,9 @@ variable "lambda_ng_words" {
   description = "NGワード（カンマ区切り）"
   type        = string
 }
+
+variable "lambda_exclude_strings" {
+  description = "リンクチェックから除外する文字列（カンマ区切り）"
+  type        = string
+}
+
