@@ -11,7 +11,7 @@ import requests
 import csv
 import io
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone, timedelta # ★ timezone, timedelta をインポート
+from datetime import datetime, timezone, timedelta
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,6 +24,9 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 
 # AWS S3 サービスクライアントを初期化
 s3_client = boto3.client('s3')
+# 日本時間(JST)のタイムゾーンを定義
+JST = timezone(timedelta(hours=+9), 'JST')
+
 
 # --- 定数定義 ---
 # Meta refreshによるリダイレクトを追跡する最大回数
@@ -36,8 +39,8 @@ PER_ARTICLE_WAIT_SECONDS = 1
 SUCCESS_STATUS_LOWER_BOUND = 200
 # リンクチェック成功とみなすHTTPステータスコードの上限 (3xx リダイレクトを含む)
 SUCCESS_STATUS_UPPER_BOUND = 400
-# CSV出力時のヘッダーを「手動リストのキー」に統一
-CSV_HEADERS = ["spreadsheet_link", "blog_article_url", "affiliate_link", "status", "status_code", "final_url", "error_message", "timestamp"]
+# CSV出力時のヘッダーをGASの処理に合わせる
+CSV_HEADERS = ["記事タイトル", "記事URL", "広告URL", "確認結果", "備考", "対応ステータス", "担当者", "タイムスタンプ"]
 
 
 # --- 環境変数からの設定読み込み ---
@@ -153,7 +156,9 @@ def check_link_status(url, ng_words=None):
             if ng_words:
                 for word in ng_words:
                     if word in page_content:
+                        # ステータスコード自体は正常でもNGワードがあればエラーとして返す
                         return {"status_code": response.status_code, "final_url": response.url, "error_message": f"ページ内にNGワードが含まれています: '{word}'"}
+            # 正常終了
             return {"status_code": response.status_code, "final_url": response.url, "error_message": None}
         except requests.exceptions.HTTPError as e:
             return {"status_code": e.response.status_code if e.response else None, "final_url": e.response.url if e.response else current_url, "error_message": str(e)}
@@ -161,18 +166,16 @@ def check_link_status(url, ng_words=None):
             return {"status_code": None, "final_url": current_url, "error_message": str(e)}
     return {"status_code": None, "final_url": current_url, "error_message": "Meta refresh redirect limit exceeded"}
 
-
 # --- メイン処理 (Lambdaハンドラ) ---
 
 def lambda_handler(event, context):
     try:
         logger.info(f"イベント受信: {json.dumps(event)}")
 
-        # NGワードを環境変数から取得
+        # 環境変数から設定を読み込み
         ng_words_str = os.environ.get('NG_WORDS', '')
         ng_words = [word.strip() for word in ng_words_str.split(',') if word.strip()]
         
-        ### 追加: 除外文字列を環境変数から取得 ###
         exclude_strings_str = os.environ.get('EXCLUDE_STRINGS', '')
         exclude_strings = [s.strip() for s in exclude_strings_str.split(',') if s.strip()]
         if exclude_strings:
@@ -180,6 +183,7 @@ def lambda_handler(event, context):
         
         if 'Records' not in event or not event['Records']:
             return {'statusCode': 400, 'body': json.dumps({'message': 'S3レコードがイベントに見つかりません。'}, ensure_ascii=False)}
+        
         s3_record = event['Records'][0]['s3']
         input_bucket_name = s3_record['bucket']['name']
         input_object_key = urllib.parse.unquote_plus(s3_record['object']['key'], encoding='utf-8')
@@ -190,8 +194,41 @@ def lambda_handler(event, context):
         auto_urls = input_data.get('auto_url_list', [])
         manual_urls = input_data.get('manual_url_list', [])
         
-        all_detailed_results = []
-        
+        all_results_for_csv = []
+
+        def process_check_result(check_result, original_item):
+            """ リンクチェック結果を判定し、CSV用の辞書を返す共通関数 """
+            status, error_reason = "OK", ""
+            status_code = check_result.get("status_code")
+            error_message = check_result.get("error_message")
+            
+            is_successful_status = status_code and SUCCESS_STATUS_LOWER_BOUND <= status_code < SUCCESS_STATUS_UPPER_BOUND
+            
+            if not is_successful_status or error_message:
+                status = "ERROR"
+                error_reason = error_message or f"ステータスコード異常: {status_code}"
+            else: # ステータスが正常な場合でも追加のドメインチェックを行う
+                final_url = check_result["final_url"]
+                parsed_final_url = urllib.parse.urlparse(final_url)
+                # spreadsheet_linkは手動リストの場合のみ存在
+                parsed_blog_url = urllib.parse.urlparse(original_item.get('spreadsheet_link') or original_item.get('url') or '')
+
+                if parsed_final_url.netloc == "jass-net.com":
+                    status, error_reason = "ERROR", "リンク先のドメインが 'jass-net.com' です"
+                elif "hatena" in final_url and parsed_blog_url and parsed_final_url.netloc != parsed_blog_url.netloc:
+                    status, error_reason = "ERROR", "リンク先のURLに 'hatena' が含まれています"
+
+            return {
+                "記事タイトル": original_item.get("spreadsheet_link", original_item.get("url")),
+                "記事URL": original_item.get("blog_article_url"),
+                "広告URL": original_item.get("affiliate_link"),
+                "確認結果": status_code,
+                "備考": error_reason,
+                "対応ステータス": "",
+                "担当者": "",
+                "タイムスタンプ": datetime.now(JST).isoformat()
+            }
+
         # --- 自動URLリスト（クロールが必要）の処理 ---
         logger.info(f"自動URLリストの処理を開始します。件数: {len(auto_urls)}")
         for target_item in auto_urls:
@@ -201,45 +238,34 @@ def lambda_handler(event, context):
             is_hatena = "hatenablog.com" in blog_url or "hatenablog.jp" in blog_url
             is_livedoor = "livedoor.blog" in blog_url or "blog.jp" in blog_url
 
+            # ... (はてなブログ、ライブドアブログのクロール処理は長いため省略、内容は変更なし) ...
+            # 内部の all_detailed_results.append(...) は process_check_result を使うように変更
+            
+            # 以下、クロール部分のロジックは元のまま
             if is_hatena:
                 current_page_url = blog_url
                 while current_page_url:
                     html_content = get_html_content(current_page_url)
                     if not html_content: break
-                    
                     extracted_links = extract_ad_links(html_content, current_page_url)
-                    
                     if extracted_links is not None:
-                        ### 追加: 除外文字列を含むリンクをフィルタリング ###
                         filtered_links = [link for link in extracted_links if not any(ex_str in link for ex_str in exclude_strings)]
-                        
-                        if not filtered_links: # ### 変更: extracted_links から filtered_links に変更 ###
-                            error_reason = "対象の広告リンクが見つかりませんでした"
-                            all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": current_page_url, "affiliate_link": current_page_url, "status": "ERROR", "status_code": None, "final_url": current_page_url, "error_message": error_reason, "timestamp": datetime.now().isoformat()})
-                        
+                        if not filtered_links:
+                            all_results_for_csv.append({ "記事タイトル": blog_url, "記事URL": current_page_url, "広告URL": current_page_url, "確認結果": None, "備考": "対象の広告リンクが見つかりませんでした", "対応ステータス": "", "担当者": "", "タイムスタンプ": datetime.now(JST).isoformat()})
                         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                            ### 変更: filtered_links を使用 ###
                             future_to_link = {executor.submit(check_link_status, link, ng_words): link for link in filtered_links}
                             for future in as_completed(future_to_link):
                                 link = future_to_link[future]
                                 try:
                                     check_result = future.result()
-                                    status, error_reason = "OK", None
-                                    is_successful_status = check_result["status_code"] and SUCCESS_STATUS_LOWER_BOUND <= check_result["status_code"] < SUCCESS_STATUS_UPPER_BOUND
-                                    if not is_successful_status or check_result["error_message"]: status, error_reason = "ERROR", check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"
-                                    if status == "OK":
-                                        final_url, parsed_final_url, parsed_blog_url = check_result["final_url"], urllib.parse.urlparse(check_result["final_url"]), urllib.parse.urlparse(blog_url)
-                                        if parsed_final_url.netloc == "jass-net.com": status, error_reason = "ERROR", "リンク先のドメインが 'jass-net.com' です"
-                                        elif "hatena" in final_url and parsed_final_url.netloc != parsed_blog_url.netloc: status, error_reason = "ERROR", "リンク先のURLに 'hatena' が含まれています"
-                                    
-                                    all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": current_page_url, "affiliate_link": link, "status": status, "status_code": check_result["status_code"], "final_url": check_result["final_url"], "error_message": error_reason, "timestamp": datetime.now().isoformat()})
+                                    original_item_data = {"url": blog_url, "blog_article_url": current_page_url, "affiliate_link": link}
+                                    processed_result = process_check_result(check_result, original_item_data)
+                                    all_results_for_csv.append(processed_result)
                                 except Exception as exc:
                                     logger.error(f"リンクチェック中に例外が発生しました {link}: {exc}")
-                                    all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": current_page_url, "affiliate_link": link, "status": "ERROR", "status_code": None, "final_url": link, "error_message": str(exc), "timestamp": datetime.now().isoformat()})
-                    
+                                    all_results_for_csv.append({"記事タイトル": blog_url, "記事URL": current_page_url, "広告URL": link, "確認結果": None, "備考": str(exc), "対応ステータス": "", "担当者": "", "タイムスタンプ": datetime.now(JST).isoformat()})
                     current_page_url = find_hatena_next_page_link(html_content, current_page_url)
                     if current_page_url: time.sleep(CRAWL_WAIT_SECONDS)
-
             elif is_livedoor:
                 all_article_urls = set()
                 current_list_page_url = blog_url
@@ -249,120 +275,76 @@ def lambda_handler(event, context):
                     all_article_urls.update(extract_livedoor_article_links(list_page_html, current_list_page_url))
                     current_list_page_url = find_livedoor_next_page_link(list_page_html, current_list_page_url)
                     if current_list_page_url: time.sleep(CRAWL_WAIT_SECONDS)
-                
                 for article_url in all_article_urls:
                     time.sleep(PER_ARTICLE_WAIT_SECONDS)
                     article_html = get_html_content(article_url)
                     if not article_html: continue
-                    
                     extracted_links = extract_ad_links(article_html, article_url)
-                    
                     if extracted_links is not None:
-                        ### 追加: 除外文字列を含むリンクをフィルタリング ###
                         filtered_links = [link for link in extracted_links if not any(ex_str in link for ex_str in exclude_strings)]
-
-                        if not filtered_links: # ### 変更: extracted_links から filtered_links に変更 ###
-                            error_reason = "対象の広告リンクが見つかりませんでした"
-                            all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": article_url, "affiliate_link": article_url, "status": "ERROR", "status_code": None, "final_url": article_url, "error_message": error_reason, "timestamp": datetime.now().isoformat()})
-
+                        if not filtered_links:
+                            all_results_for_csv.append({"記事タイトル": blog_url, "記事URL": article_url, "広告URL": article_url, "確認結果": None, "備考": "対象の広告リンクが見つかりませんでした", "対応ステータス": "", "担当者": "", "タイムスタンプ": datetime.now(JST).isoformat()})
                         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                            ### 変更: filtered_links を使用 ###
                             future_to_link = {executor.submit(check_link_status, link, ng_words): link for link in filtered_links}
                             for future in as_completed(future_to_link):
                                 link = future_to_link[future]
                                 try:
                                     check_result = future.result()
-                                    status, error_reason = "OK", None
-                                    is_successful_status = check_result["status_code"] and SUCCESS_STATUS_LOWER_BOUND <= check_result["status_code"] < SUCCESS_STATUS_UPPER_BOUND
-                                    if not is_successful_status or check_result["error_message"]: status, error_reason = "ERROR", check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"
-                                    if status == "OK":
-                                        final_url, parsed_final_url, parsed_blog_url = check_result["final_url"], urllib.parse.urlparse(check_result["final_url"]), urllib.parse.urlparse(blog_url)
-                                        if parsed_final_url.netloc == "jass-net.com": status, error_reason = "ERROR", "リンク先のドメインが 'jass-net.com' です"
-                                        elif "hatena" in final_url and parsed_final_url.netloc != parsed_blog_url.netloc: status, error_reason = "ERROR", "リンク先のURLに 'hatena' が含まれています"
-                                    
-                                    all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": article_url, "affiliate_link": link, "status": status, "status_code": check_result["status_code"], "final_url": check_result["final_url"], "error_message": error_reason, "timestamp": datetime.now().isoformat()})
+                                    original_item_data = {"url": blog_url, "blog_article_url": article_url, "affiliate_link": link}
+                                    processed_result = process_check_result(check_result, original_item_data)
+                                    all_results_for_csv.append(processed_result)
                                 except Exception as exc:
                                     logger.error(f"リンクチェック中に例外が発生しました {link}: {exc}")
-                                    all_detailed_results.append({"spreadsheet_link": blog_url, "blog_article_url": article_url, "affiliate_link": link, "status": "ERROR", "status_code": None, "final_url": link, "error_message": str(exc), "timestamp": datetime.now().isoformat()})
+                                    all_results_for_csv.append({"記事タイトル": blog_url, "記事URL": article_url, "広告URL": link, "確認結果": None, "備考": str(exc), "対応ステータス": "", "担当者": "", "タイムスタンプ": datetime.now(JST).isoformat()})
             else:
                 logger.warning(f"サポート外のブログタイプです: {blog_url}")
-        
+
         # --- 手動URLリスト（クロール不要）の直接チェック処理 ---
         logger.info(f"手動URLリストの処理を開始します。件数: {len(manual_urls)}")
-
-        ### 追加: 除外文字列を含むURLをフィルタリング ###
-        filtered_manual_urls = [
-            item for item in manual_urls 
-            if item.get('affiliate_link') and not any(ex_str in item.get('affiliate_link') for ex_str in exclude_strings)
-        ]
-        
+        filtered_manual_urls = [item for item in manual_urls if item.get('affiliate_link') and not any(ex_str in item.get('affiliate_link') for ex_str in exclude_strings)]
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            ### 変更: filtered_manual_urls を使用 ###
             future_to_manual_item = {executor.submit(check_link_status, item.get('affiliate_link'), ng_words): item for item in filtered_manual_urls}
             for future in as_completed(future_to_manual_item):
                 manual_item = future_to_manual_item[future]
-                spreadsheet_link, blog_article_url, affiliate_link = manual_item.get('spreadsheet_link'), manual_item.get('blog_article_url'), manual_item.get('affiliate_link')
                 try:
                     check_result = future.result()
-                    status, error_reason = "OK", None
-                    is_successful_status = check_result["status_code"] and SUCCESS_STATUS_LOWER_BOUND <= check_result["status_code"] < SUCCESS_STATUS_UPPER_BOUND
-                    if not is_successful_status or check_result["error_message"]: status, error_reason = "ERROR", check_result["error_message"] or f"ステータスコード: {check_result['status_code']}"
-                    if status == "OK":
-                        final_url, parsed_final_url, parsed_blog_url = check_result["final_url"], urllib.parse.urlparse(check_result["final_url"]), urllib.parse.urlparse(spreadsheet_link or '')
-                        if parsed_final_url.netloc == "jass-net.com": status, error_reason = "ERROR", "リンク先のドメインが 'jass-net.com' です"
-                        elif "hatena" in final_url and parsed_blog_url and parsed_final_url.netloc != parsed_blog_url.netloc: status, error_reason = "ERROR", "リンク先のURLに 'hatena' が含まれています"
-                    
-                    all_detailed_results.append({"spreadsheet_link": spreadsheet_link, "blog_article_url": blog_article_url, "affiliate_link": affiliate_link, "status": status, "status_code": check_result["status_code"], "final_url": check_result["final_url"], "error_message": error_reason, "timestamp": datetime.now().isoformat()})
+                    processed_result = process_check_result(check_result, manual_item)
+                    all_results_for_csv.append(processed_result)
                 except Exception as exc:
-                    logger.error(f"手動リンクチェック中に例外が発生しました {affiliate_link}: {exc}")
-                    all_detailed_results.append({"spreadsheet_link": spreadsheet_link, "blog_article_url": blog_article_url, "affiliate_link": affiliate_link, "status": "ERROR", "status_code": None, "final_url": affiliate_link, "error_message": str(exc), "timestamp": datetime.now().isoformat()})
+                    logger.error(f"手動リンクチェック中に例外が発生しました {manual_item.get('affiliate_link')}: {exc}")
+                    all_results_for_csv.append({ "記事タイトル": manual_item.get('spreadsheet_link'), "記事URL": manual_item.get('blog_article_url'), "広告URL": manual_item.get('affiliate_link'), "確認結果": None, "備考": str(exc), "対応ステータス": "", "担当者": "", "タイムスタンプ": datetime.now(JST).isoformat()})
         
         # --- 結果の出力 ---
-        logger.info(f"詳細結果の合計: {len(all_detailed_results)}")
+        logger.info(f"CSV出力対象の結果件数: {len(all_results_for_csv)}")
 
         if S3_OUTPUT_BUCKET:
             # 1. 結果CSVファイルのアップロード
-            detailed_key = "linkcheck_result.csv"
+            csv_output_key = "linkcheck_result.csv"
             output = io.StringIO()
             writer = csv.DictWriter(output, fieldnames=CSV_HEADERS)
             writer.writeheader()
-            if all_detailed_results:
-                all_detailed_results.sort(key=lambda x: (x.get('spreadsheet_link', ''), x.get('blog_article_url', ''), x.get('affiliate_link', '')))
-                writer.writerows(all_detailed_results)
+            if all_results_for_csv:
+                # spreadsheet_link, blog_article_url, affiliate_link でソートして出力
+                all_results_for_csv.sort(key=lambda x: (str(x.get('記事タイトル', '')), str(x.get('記事URL', '')), str(x.get('広告URL', ''))))
+                writer.writerows(all_results_for_csv)
             csv_body = output.getvalue()
-            s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=detailed_key, Body=csv_body.encode('utf-8'), ContentType='text/csv')
-            logger.info(f"詳細結果を s3://{S3_OUTPUT_BUCKET}/{detailed_key} にアップロードしました")
+            s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=csv_output_key, Body=csv_body.encode('utf-8-sig'), ContentType='text/csv')
+            logger.info(f"結果CSVを s3://{S3_OUTPUT_BUCKET}/{csv_output_key} にアップロードしました")
 
-            # 2. 正常完了フラグファイルのアップロード
-            try:
-                flag_file_key = "lambda_completion_status.json"
-                # JST（GMT+9）の現在日時を取得
-                jst = timezone(timedelta(hours=9), 'JST')
-                jst_now = datetime.now(jst)
-                
-                flag_data = {
-                    "status": "SUCCESS",
-                    "last_success_date": jst_now.strftime('%Y-%m-%d'), # YYYY-MM-DD形式
-                    "last_success_datetime_jst": jst_now.isoformat()
-                }
-                
-                s3_client.put_object(
-                    Bucket=S3_OUTPUT_BUCKET,
-                    Key=flag_file_key,
-                    Body=json.dumps(flag_data, indent=2),
-                    ContentType='application/json'
-                )
-                logger.info(f"完了フラグファイルを s3://{S3_OUTPUT_BUCKET}/{flag_file_key} にアップロードしました")
-
-            except Exception as flag_err:
-                # フラグファイルの配置に失敗しても、メイン処理は成功しているのでエラーログだけ記録
-                logger.error(f"完了フラグファイルのアップロードに失敗しました: {flag_err}")
+            # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+            #
+            #   GAS側の仕様変更に伴い、完了通知用のフラグファイル(.json)を作成する処理は
+            #   不要になったため、このコードから完全に削除されています。
+            #
+            # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
         else:
+            # このケースは起動時の環境変数チェックで弾かれるはずだが、念のため残す
             logger.error("S3_OUTPUT_BUCKET 環境変数が設定されていません。結果をアップロードできません。")
         
         return {'statusCode': 200, 'body': json.dumps({'message': 'リンクチェック処理が正常に完了しました！'}, ensure_ascii=False)}
 
     except Exception as e:
         logger.error(f"リンクチェック処理中に予期せぬエラーが発生しました: {e}", exc_info=True)
+        # 処理全体が失敗したことを示す
         return {'statusCode': 500, 'body': json.dumps({'message': f'リンクチェック処理中にエラーが発生しました: {str(e)}'}, ensure_ascii=False)}
