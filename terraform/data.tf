@@ -25,7 +25,10 @@ data "aws_iam_policy_document" "sns_topic_policy_document_system" {
     effect = "Allow"
     principals {
       type        = "Service"
-      identifiers = ["*"]
+      identifiers = [
+        "logs.amazonaws.com",
+        "cloudwatch.amazonaws.com"
+      ]
     }
     actions   = ["SNS:Publish"]
     resources = [aws_sns_topic.sns_topic_system.arn]
