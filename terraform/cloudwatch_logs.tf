@@ -20,5 +20,5 @@ resource "aws_cloudwatch_log_subscription_filter" "log_subscription_filter" {
   filter_pattern = "{ $.level = \"WARNING\" || $.level = \"ERROR\" }"
   destination_arn = aws_sns_topic.sns_topic_system.arn
 
-  depends_on = [aws_sns_topic_policy.sns_topic_system]
+  depends_on = [aws_sns_topic.sns_topic_system]
 }
