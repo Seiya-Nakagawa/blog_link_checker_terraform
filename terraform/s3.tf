@@ -63,7 +63,7 @@ resource "aws_s3_object" "folders" {
 }
 
 
-## ライフサイクルルール
+# ライフサイクルルール (最新3世代を保持)
 resource "aws_s3_bucket_lifecycle_configuration" "lifecycle_link_checker" {
   # ライフサイクルルールはバージョニングが有効になっている必要があるため、depends_onを追加します
   depends_on = [aws_s3_bucket_versioning.versioning_link_checker_results]
@@ -79,7 +79,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "lifecycle_link_checker" {
 
     # 非現行（古い）バージョンのオブジェクトに対するアクション
     noncurrent_version_expiration {
-      # 最新の非現行バージョンを2つ保持します。
+      noncurrent_days = 1
       newer_noncurrent_versions = 2
     }
   }
