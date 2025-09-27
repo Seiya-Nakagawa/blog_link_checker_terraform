@@ -39,7 +39,7 @@ resource "aws_iam_role" "cwlogs_exec_role" {
         Action = "sts:AssumeRole",
         Effect = "Allow",
         Principal = {
-          Service = "cloudwatch.amazonaws.com"
+          Service = "logs.amazonaws.com"
         }
       }
     ]
