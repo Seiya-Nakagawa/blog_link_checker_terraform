@@ -33,7 +33,7 @@ data "aws_iam_policy_document" "sns_topic_policy_document_system" {
     condition {
       test     = "StringEquals"
       variable = "aws:SourceAccount"
-      values   = var.aws_account_id
+      values   = [var.aws_account_id]
     }
   }
 }

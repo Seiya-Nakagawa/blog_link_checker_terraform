@@ -30,9 +30,10 @@ resource "aws_lambda_function" "link_checker_lambda" {
   layers = [aws_lambda_layer_version.dependencies_layer.arn]
 
   logging_config {
-    log_format = "json"
-    level      = "INFO"
-    log_group  = aws_cloudwatch_log_group.lambda_log_group.name
+    log_format            = "json"
+    application_log_level = "INFO"
+    system_log_level      = "INFO"
+    log_group             = aws_cloudwatch_log_group.lambda_log_group.name
   }
 
 
