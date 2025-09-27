@@ -8,10 +8,21 @@ resource "aws_s3_bucket" "s3_link_checker" {
   }
 }
 
+## 暗号化
+resource "aws_s3_bucket_server_side_encryption_configuration" "s3_encryption_link_checker" {
+  bucket = aws_s3_bucket.s3_link_checker.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+## バージョニング設定
 resource "aws_s3_bucket_versioning" "versioning_link_checker_results" {
   bucket = aws_s3_bucket.s3_link_checker.id
   versioning_configuration {
-    status = "Enabled"
+    status = "Disabled"
   }
 }
 

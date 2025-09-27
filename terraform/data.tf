@@ -18,3 +18,22 @@ data "archive_file" "lambda_function_zip" {
   # Terraformが実行される一時ディレクトリにZIPファイルが作成されます
   output_path = "${path.cwd}/build/lambda_function.zip"
 }
+
+# SNSトピックのポリシードキュメントを作成
+data "aws_iam_policy_document" "sns_topic_policy_document_system" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["*"]
+    }
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.sns_topic_system.arn]
+    
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = var.aws_account_id
+    }
+  }
+}

@@ -29,6 +29,14 @@ resource "aws_lambda_function" "link_checker_lambda" {
 
   layers = [aws_lambda_layer_version.dependencies_layer.arn]
 
+  logging_config {
+    log_format = "json"
+    level      = "INFO"
+    log_group  = aws_cloudwatch_log_group.lambda_log_group.name
+  }
+
+
+
   # Lambda関数内で使用する環境変数を定義します
   environment {
     variables = {
@@ -43,6 +51,18 @@ resource "aws_lambda_function" "link_checker_lambda" {
       EXCLUDE_STRINGS    = var.lambda_exclude_strings
     }
   }
+
+  tags = {
+    Name        = "${var.system_name}-${var.env}-link-checker-lambda",
+    SystemName  = var.system_name,
+    Env         = var.env,
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.lambda_policy_cwlogs,
+    aws_iam_role_policy_attachment.lambda_policy_s3,
+    aws_cloudwatch_log_group.lambda_log_group
+  ]
 }
 
 # ----------------------------------------------------
@@ -53,5 +73,5 @@ resource "aws_lambda_permission" "allow_s3_to_call_lambda" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.link_checker_lambda.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.s3_link_checker.arn # s3.tfで定義されているトリガー用バケット
+  source_arn    = aws_s3_bucket.s3_link_checker.arn
 }
