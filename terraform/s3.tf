@@ -22,7 +22,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "s3_encryption_lin
 resource "aws_s3_bucket_versioning" "versioning_link_checker_results" {
   bucket = aws_s3_bucket.s3_link_checker.id
   versioning_configuration {
-    status = "Disabled"
+    status = "Enabled"
   }
 }
 
@@ -60,4 +60,27 @@ resource "aws_s3_object" "folders" {
 
   # 空のコンテンツのMD5ハッシュ値を指定
   etag = md5("")
+}
+
+
+## ライフサイクルルール
+resource "aws_s3_bucket_lifecycle_configuration" "lifecycle_link_checker" {
+  # ライフサイクルルールはバージョニングが有効になっている必要があるため、depends_onを追加します
+  depends_on = [aws_s3_bucket_versioning.versioning_link_checker_results]
+
+  bucket = aws_s3_bucket.s3_link_checker.id
+
+  rule {
+    id     = "keep-last-3-versions"
+    status = "Enabled"
+
+    # バケット内のすべてのオブジェクトにルールを適用
+    filter {}
+
+    # 非現行（古い）バージョンのオブジェクトに対するアクション
+    noncurrent_version_expiration {
+      # 最新の非現行バージョンを2つ保持します。
+      newer_noncurrent_versions = 2
+    }
+  }
 }

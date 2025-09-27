@@ -30,13 +30,11 @@ resource "aws_lambda_function" "link_checker_lambda" {
   layers = [aws_lambda_layer_version.dependencies_layer.arn]
 
   logging_config {
-    log_format            = "json"
+    log_format            = "JSON"
     application_log_level = "INFO"
     system_log_level      = "INFO"
     log_group             = aws_cloudwatch_log_group.lambda_log_group.name
   }
-
-
 
   # Lambda関数内で使用する環境変数を定義します
   environment {
