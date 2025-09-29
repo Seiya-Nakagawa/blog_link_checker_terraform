@@ -7,11 +7,12 @@ resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
   evaluation_periods  = "1"
   metric_name         = "Errors"
   namespace           = "AWS/Lambda"
-  period              = "60"
+  period              = "300"
   statistic           = "Sum"
   threshold           = "1"
   alarm_description   = "Alarm when the Lambda function has errors"
   alarm_actions       = [aws_sns_topic.sns_topic_system.arn]
+  treat_missing_data  = "not_breaching"
 
   dimensions = {
     FunctionName = aws_lambda_function.link_checker_lambda.function_name
@@ -33,11 +34,12 @@ resource "aws_cloudwatch_metric_alarm" "lambda_throttle_alarm" {
   evaluation_periods  = "1"
   metric_name         = "Throttles"
   namespace           = "AWS/Lambda"
-  period              = "60"
+  period              = "300"
   statistic           = "Sum"
   threshold           = "1"
   alarm_description   = "Alarm when the Lambda function is throttled"
   alarm_actions       = [aws_sns_topic.sns_topic_system.arn]
+  treat_missing_data  = "not_breaching"
 
   dimensions = {
     FunctionName = aws_lambda_function.link_checker_lambda.function_name
