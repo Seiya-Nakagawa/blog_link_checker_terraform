@@ -58,14 +58,21 @@ Lambda関数（Python）のコードは `terraform/lambda/` にあります。
 
 1.  **スクリプトプロパティの設定**
     基本設計書に従い、以下の情報をGASのスクリプトプロパティに設定します。
-    *   AWSの認証情報 (Access Key, Secret Key)
-    *   各種スプレッドシートID
-    *   通知先メールアドレス など
+
+    | キー | 値の例 | 説明 |
+    | :--- | :--- | :--- |
+    | `SPREADSHEET_ID_WORK` | `12345abcde...` | 作業用スプレッドシートのID |
+    | `SPREADSHEET_ID_SOURCE` | `67890fghij...` | URLリストが記載された原本スプレッドシートの   ID |
+    | `S3_BUCKET_NAME` | `your-s3-bucket-name` | AWS S3バケット名 |
+    | `S3_BUCKET_REGION` | `ap-northeast-1` | S3バケットのリージョン |
+    | `EMAIL_ADDRESSES` | `your-email@example.com` | 通知を受け取るメールアドレス |
+    | `AWS_ACCESS_KEY_ID` | `AKIAIOSFODNN7EXAMPLE` | AWSアクセスキーID |
+    | `AWS_SECRET_ACCESS_KEY` | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWSシークレット    アクセスキー |
 
 2.  **トリガーの設定**
     以下の2つの関数に対して、時間ベースのトリガーを設定します。
-    *   `pre_url_s3upload.gs` 内の関数（例: `main`）: Lambda処理の前に実行（日次）
-    *   `post_result_s3download.gs` 内の関数（例: `main`）: Lambda処理が十分に完了する時間を見越して実行（日次）
+    *   `pre_url_s3upload.gs` 内の関数（`mainPreProcess`）: Lambda処理の前に実行（日次）
+    *   `post_result_s3download.gs` 内の関数（`mainPostProcess`）: Lambda処理が十分に完了する時間を見越して実行（日次）
 
 ## 使い方
 
